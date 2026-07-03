@@ -25,7 +25,14 @@ function renderModels(status) {
       <div class="mrow"><span class="mname">${esc(m.displayName)}</span>${m.id === selectedId ? '<span style="color:#4ec98a">✓</span>' : ''}</div>
       <div class="badges">${badges(m, status)}</div>
     </div>`).join('');
-  document.querySelectorAll('.mcard').forEach((el) => el.onclick = () => vscode.postMessage({ type: 'selectModel', id: el.dataset.id }));
+  document.querySelectorAll('.mcard').forEach((el) => el.onclick = () => {
+    const m = list.find((x) => x.id === el.dataset.id);
+    if (m && m.provider === 'local' && status && !status.downloadedModelIds.includes(m.local.catalogId)) {
+      vscode.postMessage({ type: 'downloadModel', catalogId: m.local.catalogId });
+    } else {
+      vscode.postMessage({ type: 'selectModel', id: el.dataset.id });
+    }
+  });
 }
 
 function renderState(status) {
@@ -116,3 +123,5 @@ $('new-chat').onclick = () => vscode.postMessage({ type: 'newChat' });
 $('agent-toggle').onchange = (e) => vscode.postMessage({ type: 'agentToggle', on: e.target.checked });
 $('banner-close').onclick = () => { $('banner').hidden = true; };
 $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('send').click(); } });
+
+setProvider('local');

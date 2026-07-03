@@ -88,8 +88,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.selected = entry;
     if (entry.provider === 'local') {
       if (!this.client) this.client = await this.connect();
-      const r = await this.client.start(entry.local!.catalogId);
-      if (!r.ok) this.post({ type: 'startRejected', rejection: r.rejection, modelId: id });
+      try {
+        const r = await this.client.start(entry.local!.catalogId);
+        if (!r.ok) this.post({ type: 'startRejected', rejection: r.rejection, modelId: id });
+      } catch (e) {
+        const msg = String(e);
+        if (msg.includes('428')) this.banner('This model needs to be downloaded first — click it to download.');
+        else this.banner(msg);
+      }
     }
     await this.pushStatus();
   }
@@ -119,6 +125,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'restoreInput', text });
       return;
     }
+    const preTurnLen = this.session.messages.length;
     this.session.addUser(text);
     this.post({ type: 'history', messages: this.session.messages });
     this.generating = new AbortController();
@@ -132,7 +139,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.session.save(this.context.workspaceState);
       this.post({ type: 'history', messages: this.session.messages });
     } catch (e) {
-      this.session.messages.pop(); // error hygiene: never leave a poisoned turn
+      this.session.messages.length = preTurnLen; // error hygiene: remove user msg + any tool exchange from the failed turn
       this.session.save(this.context.workspaceState);
       this.post({ type: 'history', messages: this.session.messages });
       this.post({ type: 'restoreInput', text });
