@@ -213,6 +213,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const entry = loadPolicy().find((e) => e.id === id);
     if (!entry) return;
     this.selected = entry;
+    this.devModel = null; // picking a governed model takes over from any dev-model routing
     if (entry.provider === 'local') {
       if (!this.client) this.client = await this.connect();
       try {
