@@ -11,3 +11,12 @@ export async function setOpenRouterKey(secrets: SecretStorage, key: string): Pro
 export async function clearOpenRouterKey(secrets: SecretStorage): Promise<void> {
   await secrets.delete(OPENROUTER_KEY_ID);
 }
+
+export const FIREWORKS_KEY_ID = 'fortressCode.fireworksKey';
+
+export function getFireworksKey(secrets: SecretStorage): Promise<string | undefined> {
+  return Promise.resolve(secrets.get(FIREWORKS_KEY_ID));
+}
+export async function setFireworksKey(secrets: SecretStorage, key: string): Promise<void> {
+  await secrets.store(FIREWORKS_KEY_ID, key.trim());
+}
