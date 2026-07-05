@@ -31,24 +31,37 @@ function renderMarkdown(text) {
   return out;
 }
 
+function cardStatus(m, status) {
+  if (m.provider !== 'local') return { badge: '<span class="b b-ram">cloud</span>', bar: '' };
+  const cid = m.local.catalogId;
+  if (status && status.download && status.download.modelId === cid && status.download.totalBytes) {
+    const pct = Math.max(0, Math.min(100, Math.floor((status.download.receivedBytes / status.download.totalBytes) * 100)));
+    return { badge: `<span class="b b-dl">⬇ downloading ${pct}%</span>`, bar: `<progress class="dlbar" max="100" value="${pct}"></progress>` };
+  }
+  if (status && status.downloadedModelIds.includes(cid)) {
+    if (status.modelId === cid && status.state === 'ready') return { badge: '<span class="b b-ready">● ready</span>', bar: '' };
+    if (status.modelId === cid && (status.state === 'loading-model' || status.state === 'starting')) return { badge: '<span class="b b-dl">starting…</span>', bar: '' };
+    return { badge: '<span class="b b-ready">✓ downloaded</span>', bar: '' };
+  }
+  return { badge: '<span class="b b-ram">⬇ download</span>', bar: '' };
+}
+
 function badges(m, status) {
   const out = [`<span class="b b-us">🇺🇸 US · ${esc(m.origin.org)}</span>`];
   out.push(m.provider === 'local' ? `<span class="b b-host">on-device</span>` : `<span class="b b-host">US providers pinned</span>`);
   if (m.agentCapable) out.push(`<span class="b b-agent">agent</span>`);
-  if (m.provider === 'local') {
-    const dl = status && status.downloadedModelIds.includes(m.local.catalogId);
-    out.push(`<span class="b b-ram">${dl ? 'ready' : 'download'}</span>`);
-  } else out.push(`<span class="b b-ram">cloud</span>`);
+  out.push(cardStatus(m, status).badge);
   return out.join('');
 }
 
 function renderModels(status) {
   const list = provider === 'local' ? policy.local : policy.openrouter;
-  $('models').innerHTML = list.map((m) => `
-    <div class="mcard ${m.id === selectedId ? 'sel' : ''}" data-id="${m.id}">
+  $('models').innerHTML = list.map((m) => {
+    const cs = cardStatus(m, status);
+    return `<div class="mcard ${m.id === selectedId ? 'sel' : ''}" data-id="${m.id}">
       <div class="mrow"><span class="mname">${esc(m.displayName)}</span>${m.id === selectedId ? '<span style="color:#4ec98a">✓</span>' : ''}</div>
-      <div class="badges">${badges(m, status)}</div>
-    </div>`).join('');
+      <div class="badges">${badges(m, status)}</div>${cs.bar}</div>`;
+  }).join('');
   document.querySelectorAll('.mcard').forEach((el) => el.onclick = () => {
     const m = list.find((x) => x.id === el.dataset.id);
     if (m && m.provider === 'local' && status && !status.downloadedModelIds.includes(m.local.catalogId)) {
