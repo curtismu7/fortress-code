@@ -32,6 +32,26 @@ describe('VectorStore', () => {
     expect(s.stats()).toEqual({ files: 0, chunks: 0 });
   });
 
+  it('replaceFile with no rows records a reusable hash for an empty file, surviving save+reopen', () => {
+    const d = dir();
+    const s = VectorStore.open(d, 2, 'nomic');
+    s.replaceFile('empty.ts', 'h-empty', []);
+    expect(s.hashOf('empty.ts')).toBe('h-empty');
+    expect(s.stats()).toEqual({ files: 0, chunks: 0 });
+    s.save();
+
+    const reloaded = VectorStore.open(d, 2, 'nomic');
+    expect(reloaded.hashOf('empty.ts')).toBe('h-empty');
+  });
+
+  it('replaceFile throws on a vector dims mismatch and leaves the store unchanged', () => {
+    const s = VectorStore.open(dir(), 2, 'nomic');
+    s.replaceFile('a.ts', 'h1', [{ meta: { startLine: 1, endLine: 5 }, vector: [1, 0] }]);
+    expect(() => s.replaceFile('b.ts', 'h2', [{ meta: { startLine: 1, endLine: 5 }, vector: [1, 0, 0] }]))
+      .toThrow('vector dims mismatch: expected 2, got 3');
+    expect(s.stats()).toEqual({ files: 1, chunks: 1 });
+  });
+
   it('reads correct vector values back after disk round-trip even when the Buffer is not 4-byte aligned', () => {
     const d = dir();
     const s = VectorStore.open(d, 3, 'nomic');

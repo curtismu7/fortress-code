@@ -18,6 +18,7 @@ describe('indexWorkspace incremental', () => {
     const root = mkdtempSync(join(tmpdir(), 'fc-idx-'));
     mkdirSync(join(root, 'src'));
     writeFileSync(join(root, 'src', 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(root, 'src', 'empty.ts'), '   \n\n  \n');
     const store = VectorStore.open(mkdtempSync(join(tmpdir(), 'fc-idxstore-')), 2, 'nomic');
 
     let calls = 0;
@@ -25,10 +26,12 @@ describe('indexWorkspace incremental', () => {
     await indexWorkspace(root, store, embed, () => {});
     expect(calls).toBeGreaterThan(0);
     expect(store.stats().chunks).toBeGreaterThan(0);
+    // whitespace-only file produces zero chunks but must still get a reusable hash
+    expect(store.hashOf('src/empty.ts')).not.toBeNull();
 
     const before = calls;
     await indexWorkspace(root, store, embed, () => {}); // nothing changed
-    expect(calls).toBe(before); // unchanged file skipped, no new embed calls
+    expect(calls).toBe(before); // unchanged file (including the empty one) skipped, no new embed calls
   });
 
   it('drops a file removed from disk while retaining a file that still exists', async () => {
@@ -46,5 +49,21 @@ describe('indexWorkspace incremental', () => {
 
     expect(store.files()).toEqual(['a.ts']);
     expect(store.stats().files).toBe(1);
+  });
+
+  it('drops a deleted empty file from files() on re-run', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fc-idx-drop-empty-'));
+    writeFileSync(join(root, 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(root, 'empty.ts'), '   \n');
+    const store = VectorStore.open(mkdtempSync(join(tmpdir(), 'fc-idxstore-drop-empty-')), 2, 'nomic');
+    const embed = async (texts: string[]) => texts.map(() => [1, 0]);
+
+    await indexWorkspace(root, store, embed, () => {});
+    expect(store.files().sort()).toEqual(['a.ts', 'empty.ts']);
+
+    unlinkSync(join(root, 'empty.ts'));
+    await indexWorkspace(root, store, embed, () => {});
+
+    expect(store.files()).toEqual(['a.ts']);
   });
 });

@@ -132,9 +132,7 @@ export function createApi(deps: ApiDeps): Server {
           if (!binaryInstalled() || !modelDownloaded(m)) return send(res, 428, { error: 'embed model not downloaded' });
           if (deps.embed.state === 'ready') return send(res, 200, {});
           const available = await deps.availableBytes();
-          const chatBytes = deps.supervisor.state === 'ready'
-            ? (catalog.find((x) => x.id === deps.supervisor.modelId)?.memoryBytes ?? 0) : 0;
-          const fit = checkFit(m.memoryBytes, available - chatBytes, totalRamBytes());
+          const fit = checkFit(m.memoryBytes, available, totalRamBytes());
           if (!fit.fits) return send(res, 409, { reason: 'insufficient-memory', requiredBytes: fit.requiredBytes, availableBytes: fit.availableBytes, wouldFitAfterForeignKill: false, foreign: [] });
           await deps.embed.start(m, modelPath(m));
           return send(res, 200, {});
@@ -145,12 +143,18 @@ export function createApi(deps: ApiDeps): Server {
           if (!Array.isArray(texts) || texts.some((t) => typeof t !== 'string')) return send(res, 400, { error: 'texts must be string[]' });
           const ep = deps.embed.endpoint();
           if (!ep) return send(res, 503, { error: 'embed server not ready' });
-          const up = await fetch(`${ep}/v1/embeddings`, {
-            method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ input: texts }),
-          });
-          if (!up.ok) return send(res, 502, { error: `embed upstream HTTP ${up.status}` });
-          const json = await up.json();
+          let json: any;
+          try {
+            const up = await fetch(`${ep}/v1/embeddings`, {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ input: texts }),
+            });
+            if (!up.ok) return send(res, 502, { error: `embed upstream HTTP ${up.status}` });
+            json = await up.json();
+          } catch {
+            return send(res, 502, { error: 'embed upstream unreachable' });
+          }
+          if (!Array.isArray(json.data)) return send(res, 502, { error: 'embed upstream returned malformed body' });
           const rows = (json.data as { embedding: number[]; index: number }[]).slice().sort((a, b) => a.index - b.index);
           const body: EmbedResponse = { vectors: rows.map((r) => r.embedding) };
           return send(res, 200, body);

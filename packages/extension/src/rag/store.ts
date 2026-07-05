@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 export interface ChunkMeta { file: string; startLine: number; endLine: number; fileHash: string }
 export interface Retrieved extends ChunkMeta { score: number }
-interface MetaDoc { dims: number; model: string; chunks: ChunkMeta[] }
+interface MetaDoc { dims: number; model: string; chunks: ChunkMeta[]; emptyFiles?: Record<string, string> }
 
 function normalize(v: number[]): Float32Array {
   let n = 0;
@@ -21,6 +21,7 @@ export class VectorStore {
     private model: string,
     private chunks: ChunkMeta[],
     private vectors: Float32Array, // row-aligned to chunks, length = chunks.length * dims
+    private emptyFiles: Record<string, string> = {},
   ) {}
 
   static open(dir: string, dims: number, model: string): VectorStore {
@@ -37,15 +38,15 @@ export class VectorStore {
         // the Float32Array view always starts at offset 0.
         const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
         const vectors = new Float32Array(ab);
-        return new VectorStore(dir, dims, model, meta.chunks, vectors);
+        return new VectorStore(dir, dims, model, meta.chunks, vectors, meta.emptyFiles ?? {});
       }
     }
-    return new VectorStore(dir, dims, model, [], new Float32Array(0));
+    return new VectorStore(dir, dims, model, [], new Float32Array(0), {});
   }
 
   hashOf(file: string): string | null {
     const c = this.chunks.find((x) => x.file === file);
-    return c ? c.fileHash : null;
+    return c ? c.fileHash : (this.emptyFiles[file] ?? null);
   }
 
   private rebuild(chunks: ChunkMeta[], vecRows: Float32Array[]): void {
@@ -62,6 +63,11 @@ export class VectorStore {
   }
 
   replaceFile(file: string, fileHash: string, rows: { meta: { startLine: number; endLine: number }; vector: number[] }[]): void {
+    for (const r of rows) {
+      if (r.vector.length !== this.dims) {
+        throw new Error(`vector dims mismatch: expected ${this.dims}, got ${r.vector.length}`);
+      }
+    }
     const keepChunks: ChunkMeta[] = [];
     const keepVecs: Float32Array[] = [];
     const existing = this.rows();
@@ -71,6 +77,11 @@ export class VectorStore {
       keepVecs.push(normalize(r.vector));
     }
     this.rebuild(keepChunks, keepVecs);
+    if (rows.length === 0) {
+      this.emptyFiles[file] = fileHash;
+    } else {
+      delete this.emptyFiles[file];
+    }
   }
 
   removeFile(file: string): void {
@@ -79,6 +90,7 @@ export class VectorStore {
     const keepVecs: Float32Array[] = [];
     this.chunks.forEach((c, i) => { if (c.file !== file) { keepChunks.push(c); keepVecs.push(existing[i]); } });
     this.rebuild(keepChunks, keepVecs);
+    delete this.emptyFiles[file];
   }
 
   topK(queryVec: number[], k: number): Retrieved[] {
@@ -98,12 +110,12 @@ export class VectorStore {
   }
 
   files(): string[] {
-    return [...new Set(this.chunks.map((c) => c.file))];
+    return [...new Set([...this.chunks.map((c) => c.file), ...Object.keys(this.emptyFiles)])];
   }
 
   save(): void {
     if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true });
-    const meta: MetaDoc = { dims: this.dims, model: this.model, chunks: this.chunks };
+    const meta: MetaDoc = { dims: this.dims, model: this.model, chunks: this.chunks, emptyFiles: this.emptyFiles };
     writeFileSync(join(this.dir, 'meta.json'), JSON.stringify(meta));
     writeFileSync(join(this.dir, 'vectors.bin'), Buffer.from(this.vectors.buffer, this.vectors.byteOffset, this.vectors.byteLength));
   }

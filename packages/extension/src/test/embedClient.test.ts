@@ -21,4 +21,10 @@ describe('DaemonClient.embed', () => {
     const c = new DaemonClient(1234, 'tok');
     expect(await c.embedStart()).toEqual({ ok: false });
   });
+
+  it('embed throws an error including the status and response text on failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('embed upstream unreachable', { status: 502 }));
+    const c = new DaemonClient(1234, 'tok');
+    await expect(c.embed(['hi'])).rejects.toThrow(/embed failed: HTTP 502 embed upstream unreachable/);
+  });
 });

@@ -49,4 +49,55 @@ describe('POST /embed', () => {
     expect(vectors).toEqual([[2, 0], [3, 1]]);
     api.close();
   });
+
+  it('returns 502 (not 500) when the embed upstream is unreachable', async () => {
+    // Grab a free port, then close it immediately so the port is known-closed.
+    const probe = createServer();
+    await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+    const closedPort = (probe.address() as any).port;
+    await new Promise<void>((r) => probe.close(() => r()));
+
+    const embed = new EmbedSupervisor();
+    embed.state = 'ready'; embed.modelId = 'nomic-embed-text-v1.5';
+    (embed as any).port = closedPort;
+
+    const api = createApi({
+      supervisor: { state: 'idle', modelId: null, endpoint: () => null, crashLog: null, managedPid: () => null, stop: async () => {} } as any,
+      embed, token: 't', onActivity: () => {}, availableBytes: async () => 32 * 1024 ** 3,
+    });
+    await new Promise<void>((r) => api.listen(0, '127.0.0.1', r));
+    const res = await call(api, '/embed', { texts: ['ab'] });
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
+    api.close();
+  });
+
+  it('returns 502 when the embed upstream returns a malformed body (no data array)', async () => {
+    const malformedSrv = createServer((req, res) => {
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({}));
+      });
+    });
+    await new Promise<void>((r) => malformedSrv.listen(0, '127.0.0.1', r));
+    const malformedPort = (malformedSrv.address() as any).port;
+
+    const embed = new EmbedSupervisor();
+    embed.state = 'ready'; embed.modelId = 'nomic-embed-text-v1.5';
+    (embed as any).port = malformedPort;
+
+    const api = createApi({
+      supervisor: { state: 'idle', modelId: null, endpoint: () => null, crashLog: null, managedPid: () => null, stop: async () => {} } as any,
+      embed, token: 't', onActivity: () => {}, availableBytes: async () => 32 * 1024 ** 3,
+    });
+    await new Promise<void>((r) => api.listen(0, '127.0.0.1', r));
+    const res = await call(api, '/embed', { texts: ['ab'] });
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
+    api.close();
+    malformedSrv.close();
+  });
 });

@@ -43,7 +43,7 @@ export class DaemonClient {
 
   async embed(texts: string[]): Promise<number[][]> {
     const res = await this.call('/embed', { method: 'POST', body: JSON.stringify({ texts }) });
-    if (!res.ok) throw new Error(`embed failed: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`embed failed: HTTP ${res.status} ${await res.text()}`);
     return (await res.json()).vectors;
   }
 
