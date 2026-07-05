@@ -46,32 +46,32 @@ export async function indexWorkspace(
   onProgress: (p: IndexProgress) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  let all = listFiles(root);
-  const capped = all.length > MAX_FILES;
-  if (capped) all = all.slice(0, MAX_FILES);
-  const present = new Set(all);
+  const allFiles = listFiles(root);
+  const capped = allFiles.length > MAX_FILES;
+  const present = new Set(allFiles); // full eligible set — drop only files truly gone from disk
+  const toProcess = capped ? allFiles.slice(0, MAX_FILES) : allFiles;
   let filesDone = 0, chunksDone = 0;
 
-  for (const rel of all) {
+  for (const rel of toProcess) {
     if (signal?.aborted) return;
     filesDone++;
     const abs = join(root, rel);
     let buf: Buffer;
     try {
       const st = statSync(abs);
-      if (st.size > MAX_FILE_BYTES) { onProgress({ filesDone, filesTotal: all.length, chunksDone, capped }); continue; }
+      if (st.size > MAX_FILE_BYTES) { onProgress({ filesDone, filesTotal: toProcess.length, chunksDone, capped }); continue; }
       buf = readFileSync(abs);
     } catch { continue; }
-    if (isProbablyBinary(buf)) { onProgress({ filesDone, filesTotal: all.length, chunksDone, capped }); continue; }
+    if (isProbablyBinary(buf)) { onProgress({ filesDone, filesTotal: toProcess.length, chunksDone, capped }); continue; }
     const text = buf.toString('utf8');
     const h = sha(text);
-    if (store.hashOf(rel) === h) { onProgress({ filesDone, filesTotal: all.length, chunksDone, capped }); continue; }
+    if (store.hashOf(rel) === h) { onProgress({ filesDone, filesTotal: toProcess.length, chunksDone, capped }); continue; }
     const chunks = chunkFile(text);
-    if (chunks.length === 0) { store.replaceFile(rel, h, []); onProgress({ filesDone, filesTotal: all.length, chunksDone, capped }); continue; }
+    if (chunks.length === 0) { store.replaceFile(rel, h, []); onProgress({ filesDone, filesTotal: toProcess.length, chunksDone, capped }); continue; }
     const vectors = await embed(chunks.map((c) => `search_document: ${c.text}`));
     store.replaceFile(rel, h, chunks.map((c, i) => ({ meta: { startLine: c.startLine, endLine: c.endLine }, vector: vectors[i] })));
     chunksDone += chunks.length;
-    onProgress({ filesDone, filesTotal: all.length, chunksDone, capped });
+    onProgress({ filesDone, filesTotal: toProcess.length, chunksDone, capped });
   }
 
   // drop files removed from disk / no longer eligible

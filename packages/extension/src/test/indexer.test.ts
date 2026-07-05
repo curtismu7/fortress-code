@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isProbablyBinary, sha, indexWorkspace, MAX_FILE_BYTES } from '../rag/indexer';
@@ -29,5 +29,22 @@ describe('indexWorkspace incremental', () => {
     const before = calls;
     await indexWorkspace(root, store, embed, () => {}); // nothing changed
     expect(calls).toBe(before); // unchanged file skipped, no new embed calls
+  });
+
+  it('drops a file removed from disk while retaining a file that still exists', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fc-idx-drop-'));
+    writeFileSync(join(root, 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(root, 'b.ts'), 'export const b = 2;\n');
+    const store = VectorStore.open(mkdtempSync(join(tmpdir(), 'fc-idxstore-drop-')), 2, 'nomic');
+    const embed = async (texts: string[]) => texts.map(() => [1, 0]);
+
+    await indexWorkspace(root, store, embed, () => {});
+    expect(store.files().sort()).toEqual(['a.ts', 'b.ts']);
+
+    unlinkSync(join(root, 'b.ts'));
+    await indexWorkspace(root, store, embed, () => {});
+
+    expect(store.files()).toEqual(['a.ts']);
+    expect(store.stats().files).toBe(1);
   });
 });
