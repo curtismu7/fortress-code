@@ -159,7 +159,9 @@ window.addEventListener('message', (e) => {
   if (m.type === 'reasoning') appendReasoning(m.text);
   if (m.type === 'reasoningDone') { const b = document.querySelector('.reasoning-live'); if (b) b.open = false; }
   if (m.type === 'usage' && m.usage) { const u = $('usage-last'); if (u) u.textContent = `↑${m.usage.promptTokens} ↓${m.usage.completionTokens} tok`; }
-  if (m.type === 'chats') { const p = $('chat-picker'); if (p) { p.innerHTML = (m.metas || []).map((c) => `<option value="${c.id}">${esc(c.title || 'New chat')}</option>`).join(''); p.value = m.activeId; } }
+  if (m.type === 'chats') { window.__lastChats = m; renderChatPicker(m.metas, m.activeId); }
+  if (m.type === 'prefs') { window.__prefs = { prompts: m.prompts || [], params: m.params || {} }; fillParams(); renderPrompts(); }
+  if (m.type === 'searchResults') { renderChatPicker(m.metas, $('chat-picker') ? $('chat-picker').value : undefined); }
   if (m.type === 'contextWindow') { window.__ctxWindow = m.tokens; updateMeter(); }
   if (m.type === 'devMode') {
     window.__dev = m.on;
@@ -195,7 +197,7 @@ function renderHistory(messages) {
       const sources = (m.sources && m.sources.length) ? `<div class="src-list" data-src-idx="${k}">Sources: </div>` : '';
       return `<div class="msg assistant">${reason}${renderMarkdown(m.content)}${sources}${foot}</div>`;
     }
-    return `<div class="msg user"><pre>${esc(m.content)}</pre><button class="editmsg" data-idx="${i}" title="Edit &amp; resend">✎</button></div>`;
+    return `<div class="msg user"><pre>${esc(m.content)}</pre><button class="editmsg" data-idx="${i}" title="Edit &amp; resend">✎</button><button class="forkmsg" data-idx="${i}" title="Fork from here">⑂</button></div>`;
   }).join('');
   document.querySelectorAll('.src-list[data-src-idx]').forEach((el) => {
     const entry = shown[+el.dataset.srcIdx];
@@ -251,6 +253,81 @@ function renderRejection(r, modelId) {
   if (btn) btn.onclick = () => { vscode.postMessage({ type: 'killForeign', pids: r.foreign.map((p) => p.pid) }); setTimeout(() => vscode.postMessage({ type: 'selectModel', id: modelId }), 1500); };
 }
 
+function renderChatPicker(metas, activeId) {
+  const p = $('chat-picker');
+  if (!p) return;
+  const keep = activeId !== undefined ? activeId : p.value;
+  p.innerHTML = (metas || []).map((c) => `<option value="${c.id}">${esc(c.title || 'New chat')}</option>`).join('');
+  p.value = keep;
+}
+
+function fillParams() {
+  const params = (window.__prefs && window.__prefs.params) || {};
+  const t = $('p-temp'); if (t) t.value = params.temperature != null ? String(params.temperature) : '';
+  const tp = $('p-topp'); if (tp) tp.value = params.top_p != null ? String(params.top_p) : '';
+  const mt = $('p-maxtok'); if (mt) mt.value = params.max_tokens != null ? String(params.max_tokens) : '';
+}
+
+function renderPrompts() {
+  const box = $('prompts-list');
+  if (!box) return;
+  const list = (window.__prefs && window.__prefs.prompts) || [];
+  box.innerHTML = '';
+  list.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'prompt-item';
+    const use = document.createElement('span');
+    use.className = 'pr-title-use';
+    use.dataset.id = p.id;
+    use.textContent = p.title;
+    const del = document.createElement('button');
+    del.className = 'pr-del';
+    del.dataset.id = p.id;
+    del.title = 'Delete prompt';
+    del.textContent = '✕';
+    row.appendChild(use);
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+let slashActive = -1;
+function slashCandidates(filter) {
+  const list = (window.__prefs && window.__prefs.prompts) || [];
+  const f = filter.toLowerCase();
+  return list.filter((p) => p.title.toLowerCase().includes(f));
+}
+function renderSlashMenu(items) {
+  const menu = $('slash-menu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  items.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'slash-item' + (i === slashActive ? ' active' : '');
+    row.dataset.idx = String(i);
+    row.textContent = p.title;
+    menu.appendChild(row);
+  });
+  menu.hidden = items.length === 0;
+}
+function closeSlashMenu() {
+  const menu = $('slash-menu');
+  if (menu) menu.hidden = true;
+  slashActive = -1;
+  window.__slashItems = [];
+}
+function pickSlashItem(p) {
+  const input = $('input');
+  if (!input || !p) return;
+  input.value = p.text;
+  closeSlashMenu();
+  input.focus();
+  const match = /\{[^}]*\}/.exec(p.text);
+  if (match) input.setSelectionRange(match.index, match.index + match[0].length);
+  else input.setSelectionRange(input.value.length, input.value.length);
+  updateMeter();
+}
+
 $('seg-local').onclick = () => setProvider('local');
 $('seg-or').onclick = () => setProvider('openrouter');
 $('or-key-save').onclick = () => { const k = $('or-key-input').value.trim(); if (k) vscode.postMessage({ type: 'setOpenRouterKey', key: k }); };
@@ -272,6 +349,70 @@ $('chat-picker').onchange = (e) => { turnReasoning = ''; vscode.postMessage({ ty
 $('input').addEventListener('input', updateMeter);
 $('agent-toggle').onchange = (e) => vscode.postMessage({ type: 'agentToggle', on: e.target.checked });
 $('banner-close').onclick = () => { $('banner').hidden = true; };
+
+{ const _cs = $('chat-search'); if (_cs) _cs.oninput = () => {
+  const q = _cs.value;
+  if (!q.trim()) { if (window.__lastChats) renderChatPicker(window.__lastChats.metas, window.__lastChats.activeId); return; }
+  vscode.postMessage({ type: 'searchChats', query: q });
+}; }
+{ const _ec = $('export-chat'); if (_ec) _ec.onclick = () => vscode.postMessage({ type: 'exportChat' }); }
+{ const _pb = $('params-btn'); if (_pb) _pb.onclick = () => { const pop = $('params-pop'); if (pop) pop.hidden = !pop.hidden; }; }
+{ const _pa = $('params-apply'); if (_pa) _pa.onclick = () => {
+  const params = {};
+  const t = $('p-temp'); if (t && t.value !== '') params.temperature = Number(t.value);
+  const tp = $('p-topp'); if (tp && tp.value !== '') params.top_p = Number(tp.value);
+  const mt = $('p-maxtok'); if (mt && mt.value !== '') params.max_tokens = Number(mt.value);
+  vscode.postMessage({ type: 'setParams', params });
+}; }
+{ const _prb = $('prompts-btn'); if (_prb) _prb.onclick = () => { const mgr = $('prompts-mgr'); if (mgr) { mgr.hidden = !mgr.hidden; if (!mgr.hidden) renderPrompts(); } }; }
+{ const _pcl = $('prompts-close'); if (_pcl) _pcl.onclick = () => { const mgr = $('prompts-mgr'); if (mgr) mgr.hidden = true; }; }
+{ const _ps = $('pr-save'); if (_ps) _ps.onclick = () => {
+  const titleEl = $('pr-title'); const textEl = $('pr-text');
+  if (!titleEl || !textEl) return;
+  const title = titleEl.value.trim();
+  const text = textEl.value;
+  if (!title || !text.trim()) return;
+  const id = window.__editingPromptId || crypto.randomUUID();
+  vscode.postMessage({ type: 'savePrompt', prompt: { id, title, text } });
+  window.__editingPromptId = null;
+  titleEl.value = ''; textEl.value = '';
+}; }
+document.addEventListener('click', (e) => {
+  const del = e.target.closest && e.target.closest('.pr-del');
+  if (del) { vscode.postMessage({ type: 'deletePrompt', id: del.dataset.id }); return; }
+  const use = e.target.closest && e.target.closest('.pr-title-use');
+  if (use) {
+    const list = (window.__prefs && window.__prefs.prompts) || [];
+    const p = list.find((x) => x.id === use.dataset.id);
+    if (p) { const te = $('pr-title'); const xe = $('pr-text'); if (te) te.value = p.title; if (xe) xe.value = p.text; window.__editingPromptId = p.id; }
+    return;
+  }
+  const item = e.target.closest && e.target.closest('.slash-item');
+  if (item) { pickSlashItem((window.__slashItems || [])[+item.dataset.idx]); }
+});
+let slashPrevValue = '';
+{ const _in = $('input'); if (_in) _in.addEventListener('input', () => {
+  const v = _in.value;
+  const wasEmptyOrSlash = slashPrevValue === '' || slashPrevValue.startsWith('/');
+  if (v.startsWith('/') && wasEmptyOrSlash) {
+    const items = slashCandidates(v.slice(1));
+    slashActive = items.length ? 0 : -1;
+    window.__slashItems = items;
+    renderSlashMenu(items);
+  } else {
+    closeSlashMenu();
+  }
+  slashPrevValue = v;
+}); }
+{ const _in = $('input'); if (_in) _in.addEventListener('keydown', (e) => {
+  const menu = $('slash-menu');
+  if (!menu || menu.hidden) return;
+  const items = window.__slashItems || [];
+  if (e.key === 'ArrowDown') { e.preventDefault(); slashActive = Math.min(items.length - 1, slashActive + 1); renderSlashMenu(items); return; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); slashActive = Math.max(0, slashActive - 1); renderSlashMenu(items); return; }
+  if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); pickSlashItem(items[slashActive]); return; }
+  if (e.key === 'Escape') { e.preventDefault(); closeSlashMenu(); return; }
+}); }
 $('messages').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-cb]');
   if (b) {
@@ -284,6 +425,8 @@ $('messages').addEventListener('click', (e) => {
   if (e.target.closest('.regen')) { turnReasoning = ''; vscode.postMessage({ type: 'regenerate' }); return; }
   const em = e.target.closest('.editmsg');
   if (em) { turnReasoning = ''; vscode.postMessage({ type: 'editLoad', index: +em.dataset.idx }); return; }
+  const fm = e.target.closest('.forkmsg');
+  if (fm) { turnReasoning = ''; vscode.postMessage({ type: 'forkChat', index: +fm.dataset.idx }); return; }
 });
 $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('send').click(); } });
 

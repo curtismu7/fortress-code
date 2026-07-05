@@ -41,13 +41,33 @@
   </section>
 
   <header id="chat-head" hidden>
+    <input id="chat-search" placeholder="Search chats" />
     <select id="chat-picker" title="Chats"></select>
     <span id="active-model"></span>
     <label><input type="checkbox" id="agent-toggle" /> Agent</label>
     <button id="new-chat">New chat</button>
+    <button id="export-chat" title="Export chat as Markdown">Export</button>
+    <button id="params-btn" title="Model parameters">⚙</button>
+    <button id="prompts-btn" title="Prompt library">Prompts</button>
   </header>
+  <div id="params-pop" hidden>
+    <label>Temperature <input id="p-temp" type="number" step="0.1" min="0" max="2" placeholder="model default" /></label>
+    <label>Top P <input id="p-topp" type="number" step="0.05" min="0" max="1" placeholder="model default" /></label>
+    <label>Max tokens <input id="p-maxtok" type="number" step="1" min="1" placeholder="model default" /></label>
+    <button id="params-apply">Apply</button>
+  </div>
+  <div id="prompts-mgr" hidden>
+    <div id="prompts-list"></div>
+    <input id="pr-title" placeholder="Prompt title" />
+    <textarea id="pr-text" placeholder="Prompt text (use {var} for a placeholder)"></textarea>
+    <div class="pr-actions">
+      <button id="pr-save">Save</button>
+      <button id="prompts-close">Close</button>
+    </div>
+  </div>
   <main id="messages"></main>
   <div id="steps" hidden></div>
+  <div id="slash-menu" hidden></div>
   <footer id="composer" hidden>
     <div id="chips"></div>
     <textarea id="input" rows="2" placeholder="Ask your model…"></textarea>
