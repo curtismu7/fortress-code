@@ -192,11 +192,28 @@ function renderHistory(messages) {
     if (m.role === 'assistant') {
       const reason = (k === lastA && turnReasoning) ? `<details class="reasoning"><summary>▸ Reasoning</summary><pre>${esc(turnReasoning)}</pre></details>` : '';
       const foot = k === lastA ? `<div class="msg-foot"><button class="regen">↻ Regenerate</button><span class="usage" id="usage-last"></span></div>` : '';
-      const sources = (m.sources && m.sources.length) ? `<div class="src-list">Sources: ${m.sources.map((s) => `<a href="#" class="src-link" data-file="${esc(s.file)}" data-start="${esc(String(s.startLine))}" data-end="${esc(String(s.endLine))}">${esc(s.file)}:L${esc(String(s.startLine))}-${esc(String(s.endLine))}</a>`).join(' ')}</div>` : '';
+      const sources = (m.sources && m.sources.length) ? `<div class="src-list" data-src-idx="${k}">Sources: </div>` : '';
       return `<div class="msg assistant">${reason}${renderMarkdown(m.content)}${sources}${foot}</div>`;
     }
     return `<div class="msg user"><pre>${esc(m.content)}</pre><button class="editmsg" data-idx="${i}" title="Edit &amp; resend">✎</button></div>`;
   }).join('');
+  document.querySelectorAll('.src-list[data-src-idx]').forEach((el) => {
+    const entry = shown[+el.dataset.srcIdx];
+    if (!entry || !entry.m.sources) return;
+    entry.m.sources.forEach((s) => {
+      const startLine = Number(s.startLine);
+      const endLine = Number(s.endLine);
+      const a = document.createElement('a');
+      a.href = '#';
+      a.className = 'src-link';
+      a.dataset.file = s.file;
+      a.dataset.start = String(startLine);
+      a.dataset.end = String(endLine);
+      a.textContent = `${s.file}:L${startLine}-L${endLine}`;
+      el.appendChild(a);
+      el.appendChild(document.createTextNode(' '));
+    });
+  });
   $('messages').scrollTop = $('messages').scrollHeight;
 }
 function appendToken(t) {

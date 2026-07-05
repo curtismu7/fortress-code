@@ -280,8 +280,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             const doc = await vscode.workspace.openTextDocument(abs);
             const editor = await vscode.window.showTextDocument(doc);
             const startLine = Math.max(0, Number(m.startLine) - 1);
-            const endLine = Math.max(startLine, Number(m.endLine) - 1);
-            const range = new vscode.Range(startLine, 0, endLine, doc.lineAt(Math.min(endLine, doc.lineCount - 1)).text.length);
+            const endLine = Math.min(Math.max(startLine, Number(m.endLine) - 1), doc.lineCount - 1);
+            const range = new vscode.Range(startLine, 0, endLine, doc.lineAt(endLine).text.length);
             editor.selection = new vscode.Selection(range.start, range.end);
             editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
           } catch (e) {
