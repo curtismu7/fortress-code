@@ -2,7 +2,7 @@
   "name": "fortress-code",
   "displayName": "Fortress Code",
   "description": "Local US-model chat + agent for VS Code. Memory-safe llama.cpp management built in.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "coachcurtis",
   "repository": {
     "type": "git",
