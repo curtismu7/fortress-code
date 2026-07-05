@@ -1,8 +1,9 @@
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadCatalog, type CatalogModel, type StatusResponse, type StartRejection, type DownloadProgress, hfUrl } from '@fortress-code/shared';
+import { loadCatalog, type CatalogModel, type StatusResponse, type StartRejection, type DownloadProgress, type EmbedResponse, hfUrl } from '@fortress-code/shared';
 import { Supervisor } from './supervisor';
+import { EmbedSupervisor } from './embedSupervisor';
 import { modelsDir } from './paths';
 import { checkFit, totalRamBytes } from './memory';
 import { scanForeign, killPids } from './processes';
@@ -11,6 +12,7 @@ import { binaryInstalled, installBinary } from './binary';
 
 export interface ApiDeps {
   supervisor: Supervisor;
+  embed: EmbedSupervisor;
   token: string;
   onActivity: () => void;
   availableBytes: () => Promise<number>;
@@ -55,6 +57,7 @@ export function createApi(deps: ApiDeps): Server {
             binaryInstalled: binaryInstalled(),
             downloadedModelIds: catalog.filter(modelDownloaded).map((m) => m.id),
             downloadError,
+            embed: { state: deps.embed.state, modelId: deps.embed.modelId, endpoint: deps.embed.endpoint() },
           };
           return send(res, 200, body);
         }
@@ -119,8 +122,38 @@ export function createApi(deps: ApiDeps): Server {
         case 'POST /shutdown': {
           send(res, 200, {});
           await deps.supervisor.stop();
+          await deps.embed.stop();
           setTimeout(() => process.exit(0), 100);
           return;
+        }
+        case 'POST /embed/start': {
+          const m = catalog.find((x) => x.embedding);
+          if (!m) return send(res, 404, { error: 'no embedding model in catalog' });
+          if (!binaryInstalled() || !modelDownloaded(m)) return send(res, 428, { error: 'embed model not downloaded' });
+          if (deps.embed.state === 'ready') return send(res, 200, {});
+          const available = await deps.availableBytes();
+          const chatBytes = deps.supervisor.state === 'ready'
+            ? (catalog.find((x) => x.id === deps.supervisor.modelId)?.memoryBytes ?? 0) : 0;
+          const fit = checkFit(m.memoryBytes, available - chatBytes, totalRamBytes());
+          if (!fit.fits) return send(res, 409, { reason: 'insufficient-memory', requiredBytes: fit.requiredBytes, availableBytes: fit.availableBytes, wouldFitAfterForeignKill: false, foreign: [] });
+          await deps.embed.start(m, modelPath(m));
+          return send(res, 200, {});
+        }
+        case 'POST /embed/stop': { await deps.embed.stop(); return send(res, 200, {}); }
+        case 'POST /embed': {
+          const { texts } = await readBody(req);
+          if (!Array.isArray(texts) || texts.some((t) => typeof t !== 'string')) return send(res, 400, { error: 'texts must be string[]' });
+          const ep = deps.embed.endpoint();
+          if (!ep) return send(res, 503, { error: 'embed server not ready' });
+          const up = await fetch(`${ep}/v1/embeddings`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ input: texts }),
+          });
+          if (!up.ok) return send(res, 502, { error: `embed upstream HTTP ${up.status}` });
+          const json = await up.json();
+          const rows = (json.data as { embedding: number[]; index: number }[]).slice().sort((a, b) => a.index - b.index);
+          const body: EmbedResponse = { vectors: rows.map((r) => r.embedding) };
+          return send(res, 200, body);
         }
         default: return send(res, 404, { error: 'not found' });
       }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createApi } from '../src/httpApi';
 import { Supervisor } from '../src/supervisor';
+import { EmbedSupervisor } from '../src/embedSupervisor';
 import { loadCatalog } from '@fortress-code/shared';
 
 const STUB = join(__dirname, 'fixtures', 'stub-llama-server.mjs');
@@ -25,7 +26,7 @@ beforeEach(async () => {
   const dir = join(process.env.FC_DATA_DIR, 'models', m.id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, m.files[0].name), 'fake');
-  server = createApi({ supervisor: new Supervisor(), token: TOKEN, onActivity: () => {}, availableBytes: async () => available });
+  server = createApi({ supervisor: new Supervisor(), embed: new EmbedSupervisor(), token: TOKEN, onActivity: () => {}, availableBytes: async () => available });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
