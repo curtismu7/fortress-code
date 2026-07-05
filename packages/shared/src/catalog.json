@@ -122,5 +122,25 @@
       "--reasoning-format",
       "none"
     ]
+  },
+  {
+    "id": "nomic-embed-text-v1.5",
+    "family": "embedding",
+    "displayName": "Nomic Embed Text v1.5",
+    "hfRepo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
+    "files": [
+      {
+        "name": "nomic-embed-text-v1.5.f16.gguf",
+        "sha256": "f7af6f66802f4df86eda10fe9bbcfc75c39562bed48ef6ace719a251cf1c2fdb",
+        "bytes": 274290560
+      }
+    ],
+    "memoryBytes": 805306368,
+    "ramTierBytes": 8589934592,
+    "toolCalling": false,
+    "license": "Apache-2.0",
+    "extraArgs": [],
+    "embedding": true,
+    "dims": 768
   }
 ]

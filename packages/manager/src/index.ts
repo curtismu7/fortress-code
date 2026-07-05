@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createApi } from './httpApi';
 import { Supervisor } from './supervisor';
+import { EmbedSupervisor } from './embedSupervisor';
 import { dataDir, readDaemonInfo, writeDaemonInfo, isProcessAlive } from './paths';
 import { readAvailableBytes } from './memory';
 
@@ -22,9 +23,11 @@ async function main(): Promise<void> {
   }
   const token = randomBytes(32).toString('hex');
   const supervisor = new Supervisor();
+  const embed = new EmbedSupervisor();
   let lastActivity = Date.now();
   const api = createApi({
     supervisor,
+    embed,
     token,
     onActivity: () => { lastActivity = Date.now(); },
     availableBytes: readAvailableBytes,
@@ -39,6 +42,7 @@ async function main(): Promise<void> {
     if (Date.now() - lastActivity > IDLE_MS) {
       log('idle timeout: stopping server and exiting');
       await supervisor.stop();
+      await embed.stop();
       process.exit(0);
     }
   }, CHECK_INTERVAL_MS).unref();

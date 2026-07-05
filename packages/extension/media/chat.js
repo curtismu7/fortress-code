@@ -162,6 +162,20 @@ window.addEventListener('message', (e) => {
     $('dev-preset').innerHTML = '<option value="">— pick a Fireworks model —</option>' +
       (m.presets || []).map((p) => `<option value="${p.slug}">${esc(p.label)}</option>`).join('');
   }
+  if (m.type === 'ragStatus') {
+    const s = m.stats || { files: 0, chunks: 0 };
+    $('rag-status').textContent = s.chunks ? `Indexed ${s.files} files · ${s.chunks} chunks` : 'Not indexed';
+    if (m.indexing) { $('rag-index').disabled = true; }
+    else { $('rag-index').disabled = false; $('rag-bar').hidden = true; }
+  }
+  if (m.type === 'ragProgress') {
+    const p = m.progress || {};
+    $('rag-bar').hidden = false;
+    $('rag-index').disabled = true;
+    const pct = p.filesTotal ? Math.round((p.filesDone / p.filesTotal) * 100) : 0;
+    $('rag-fill').style.width = pct + '%';
+    $('rag-status').textContent = `Indexing ${p.filesDone}/${p.filesTotal}${p.capped ? ' (capped)' : ''} · ${p.chunksDone} chunks`;
+  }
 });
 
 function renderHistory(messages) {
@@ -229,6 +243,7 @@ $('send').onclick = () => {
 $('cancel').onclick = () => { vscode.postMessage({ type: 'cancel' }); $('cancel').hidden = true; };
 $('new-chat').onclick = () => { turnReasoning = ''; vscode.postMessage({ type: 'newChat' }); };
 { const _gt = $('gallery-toggle'); if (_gt) _gt.onclick = () => { galleryUserToggled = true; $('gallery-body').hidden = !$('gallery-body').hidden; updateGalleryToggle(); }; }
+{ const _ri = $('rag-index'); if (_ri) _ri.onclick = () => { $('rag-index').disabled = true; vscode.postMessage({ type: 'indexWorkspace' }); }; }
 $('chat-picker').onchange = (e) => { turnReasoning = ''; vscode.postMessage({ type: 'switchChat', id: e.target.value }); };
 $('input').addEventListener('input', updateMeter);
 $('agent-toggle').onchange = (e) => vscode.postMessage({ type: 'agentToggle', on: e.target.checked });

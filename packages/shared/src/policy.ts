@@ -4,6 +4,7 @@ import { isAllowed, type PolicyEntry } from './governance';
 const LOCAL_ORG: Record<CatalogModel['family'], string> = {
   gemma3: 'Google',
   'gpt-oss': 'OpenAI',
+  embedding: 'Nomic AI',
 };
 
 export function localEntries(): PolicyEntry[] {

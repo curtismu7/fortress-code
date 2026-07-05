@@ -60,3 +60,8 @@ code.inl { background: var(--vscode-textCodeBlock-background, #2a2a2a); padding:
 .b-dl { color: #5bb8d6; border-color: #2e5a6b; }
 .b-ready { color: #4ec98a; border-color: #2e6b4c; }
 .dlbar { width: 100%; height: 5px; margin-top: 6px; display: block; }
+#rag { margin-top: 8px; border-top: 1px solid var(--vscode-panel-border); padding-top: 8px; }
+#rag-row { display: flex; align-items: center; gap: 8px; }
+#rag-status { color: var(--vscode-descriptionForeground); font-size: 12px; }
+#rag-hint { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 4px; }
+#rag-fill { display: block; height: 100%; width: 0; background: var(--vscode-progressBar-background); }

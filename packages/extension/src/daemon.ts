@@ -40,6 +40,21 @@ export class DaemonClient {
     if (res.status === 409) return { ok: false, rejection: await res.json() };
     throw new Error(`start failed: HTTP ${res.status} ${await res.text()}`);
   }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    const res = await this.call('/embed', { method: 'POST', body: JSON.stringify({ texts }) });
+    if (!res.ok) throw new Error(`embed failed: HTTP ${res.status}`);
+    return (await res.json()).vectors;
+  }
+
+  async embedStart(): Promise<{ ok: boolean }> {
+    const res = await this.call('/embed/start', { method: 'POST', body: '{}' });
+    return { ok: res.status === 200 };
+  }
+
+  async embedStop(): Promise<void> {
+    await this.call('/embed/stop', { method: 'POST', body: '{}' });
+  }
 }
 
 async function alive(info: DaemonInfo): Promise<boolean> {

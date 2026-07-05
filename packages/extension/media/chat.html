@@ -17,6 +17,14 @@
       <div id="req-or" class="warn" hidden>☁️ Cloud — leaves your machine. Prompts &amp; code go to OpenRouter and pinned <b>US inference providers only, no fallback</b>. Less private than Local.</div>
       <div id="or-key" hidden><input id="or-key-input" type="password" placeholder="OpenRouter API key (stored in your OS keychain)" /><button id="or-key-save">Save</button></div>
       <div id="models"></div>
+      <div id="rag">
+        <div id="rag-row">
+          <button id="rag-index">Index workspace</button>
+          <span id="rag-status">Not indexed</span>
+        </div>
+        <div id="rag-bar" class="dlbar" hidden><span id="rag-fill"></span></div>
+        <div id="rag-hint">Type <b>@codebase</b> in a message to search the whole repo.</div>
+      </div>
       <div id="add-row"><input id="add-slug" placeholder="Add an OpenRouter model (e.g. openai/gpt-4o)" /><button id="add-btn">＋ Add</button></div>
       <div id="add-blocked" hidden></div>
     </div>

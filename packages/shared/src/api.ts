@@ -13,6 +13,14 @@ export interface DownloadProgress {
   totalBytes: number;
 }
 
+export interface EmbedRequest { texts: string[] }
+export interface EmbedResponse { vectors: number[][] }
+export interface EmbedStatus {
+  state: ServerState;
+  modelId: string | null;
+  endpoint: string | null;
+}
+
 export interface StatusResponse {
   state: ServerState;
   modelId: string | null;
@@ -23,6 +31,7 @@ export interface StatusResponse {
   binaryInstalled: boolean;
   downloadedModelIds: string[];
   downloadError: string | null; // last download/install failure, surfaced to the UI
+  embed: EmbedStatus;
 }
 
 export interface ForeignProcess {

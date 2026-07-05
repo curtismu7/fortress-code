@@ -9,7 +9,7 @@ const fileSchema = z.object({
 
 const modelSchema = z.object({
   id: z.string(),
-  family: z.enum(['gemma3', 'gpt-oss']),
+  family: z.enum(['gemma3', 'gpt-oss', 'embedding']),
   displayName: z.string(),
   hfRepo: z.string(),
   files: z.array(fileSchema).min(1),
@@ -18,6 +18,8 @@ const modelSchema = z.object({
   toolCalling: z.boolean(),
   license: z.string(),
   extraArgs: z.array(z.string()),
+  embedding: z.boolean().optional(),
+  dims: z.number().int().positive().optional(),
 });
 
 export type CatalogModel = z.infer<typeof modelSchema>;

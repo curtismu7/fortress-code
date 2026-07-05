@@ -1,6 +1,13 @@
+import { buildCodebaseBlock } from './rag/retriever';
+
 export interface AttachedFile { id: string; relPath: string; language: string; content: string; truncated: boolean; diagnostics: string[] }
 export interface SelectionCtx { id: string; relPath: string; startLine: number; endLine: number; text: string }
-export interface ChatContext { file: AttachedFile | null; selection: SelectionCtx | null; mentions: AttachedFile[] }
+export interface ChatContext {
+  file: AttachedFile | null;
+  selection: SelectionCtx | null;
+  mentions: AttachedFile[];
+  codebase?: { file: string; startLine: number; endLine: number; text: string }[] | null;
+}
 
 export function parseMentions(input: string): string[] {
   const out: string[] = [];
@@ -31,5 +38,6 @@ export function buildContextPreamble(ctx: ChatContext): string {
   if (ctx.file) parts.push(fileBlock('active file', ctx.file));
   if (ctx.selection) parts.push(`[context] selection ${ctx.selection.relPath} L${ctx.selection.startLine}-${ctx.selection.endLine}\n\`\`\`\n${ctx.selection.text}\n\`\`\``);
   for (const mn of ctx.mentions) parts.push(fileBlock('mentioned file', mn));
+  if (ctx.codebase && ctx.codebase.length) parts.push(buildCodebaseBlock(ctx.codebase));
   return parts.join('\n\n');
 }
