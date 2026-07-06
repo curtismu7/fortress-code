@@ -1,9 +1,11 @@
 export interface SavedPrompt { id: string; title: string; text: string }
 export interface Params { temperature?: number; top_p?: number; max_tokens?: number }
+export interface Persona { id: string; name: string; systemPrompt: string; modelId?: string; params?: Params }
 export interface MementoLike { get(key: string): unknown; update(key: string, value: unknown): unknown }
 
 const PROMPTS_KEY = 'fortressCode.prompts';
 const PARAMS_KEY = 'fortressCode.params';
+const PERSONAS_KEY = 'fortressCode.personas';
 
 const RANGES: Record<keyof Params, (v: number) => boolean> = {
   temperature: (v) => v >= 0 && v <= 2,
@@ -40,5 +42,20 @@ export class Prefs {
       if (typeof v === 'number' && !Number.isNaN(v) && RANGES[key](v)) out[key] = v;
     }
     void this.state.update(PARAMS_KEY, out);
+  }
+
+  personas(): Persona[] {
+    const raw = this.state.get(PERSONAS_KEY);
+    return Array.isArray(raw) ? raw.filter((p): p is Persona =>
+      !!p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.systemPrompt === 'string') : [];
+  }
+  savePersona(p: Persona): void {
+    const list = this.personas();
+    const i = list.findIndex((x) => x.id === p.id);
+    if (i >= 0) list[i] = p; else list.push(p);
+    void this.state.update(PERSONAS_KEY, list);
+  }
+  deletePersona(id: string): void {
+    void this.state.update(PERSONAS_KEY, this.personas().filter((x) => x.id !== id));
   }
 }

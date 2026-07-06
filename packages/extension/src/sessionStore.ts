@@ -2,28 +2,59 @@ import { randomUUID } from 'node:crypto';
 import { validateHistory, type ChatMessage } from '@fortress-code/shared';
 import { Session } from './chat/session';
 
-export interface ChatMeta { id: string; title: string }
+export interface ChatMeta { id: string; title: string; folder?: string; personaId?: string }
 interface MementoLike { get(key: string): unknown; update(key: string, value: unknown): Thenable<void> | void }
 const KEY = 'fortressCode.chats';
 const LEGACY = 'fortressCode.session';
 
 export class SessionStore {
   activeId: string;
-  private order: string[]; // ids, newest first
+  private order: string[];
   private titles: Map<string, string>;
+  private folders: Map<string, string>;
+  private personaIds: Map<string, string>;
   private sessions: Map<string, Session>;
 
-  private constructor(private state: MementoLike, activeId: string, order: string[], titles: Map<string, string>, sessions: Map<string, Session>) {
-    this.activeId = activeId; this.order = order; this.titles = titles; this.sessions = sessions;
+  private constructor(
+    private state: MementoLike, activeId: string, order: string[],
+    titles: Map<string, string>, folders: Map<string, string>, personaIds: Map<string, string>,
+    sessions: Map<string, Session>,
+  ) {
+    this.activeId = activeId; this.order = order; this.titles = titles;
+    this.folders = folders; this.personaIds = personaIds; this.sessions = sessions;
   }
 
-  metas(): ChatMeta[] { return this.order.map((id) => ({ id, title: this.titles.get(id) || 'New chat' })); }
+  metas(): ChatMeta[] {
+    return this.order.map((id) => ({
+      id,
+      title: this.titles.get(id) || 'New chat',
+      folder: this.folders.get(id),
+      personaId: this.personaIds.get(id),
+    }));
+  }
+
+  listFolders(): string[] {
+    return [...new Set([...this.folders.values()].filter(Boolean))].sort();
+  }
+
+  setFolder(chatId: string, folder: string | undefined): void {
+    if (!this.sessions.has(chatId)) return;
+    if (folder?.trim()) this.folders.set(chatId, folder.trim());
+    else this.folders.delete(chatId);
+    this.save();
+  }
+
+  setPersona(chatId: string, personaId: string | undefined): void {
+    if (!this.sessions.has(chatId)) return;
+    if (personaId) this.personaIds.set(chatId, personaId);
+    else this.personaIds.delete(chatId);
+    this.save();
+  }
+
   active(): Session { return this.sessions.get(this.activeId)!; }
   messagesById(): Record<string, ChatMessage[]> {
     const result: Record<string, ChatMessage[]> = {};
-    for (const [id, session] of this.sessions) {
-      result[id] = session.messages;
-    }
+    for (const [id, session] of this.sessions) result[id] = session.messages;
     return result;
   }
 
@@ -46,6 +77,8 @@ export class SessionStore {
     const id = randomUUID();
     const title = ('Fork: ' + (this.titles.get(this.activeId) || 'New chat')).slice(0, 40);
     this.order.unshift(id); this.titles.set(id, title); this.sessions.set(id, copy);
+    const folder = this.folders.get(this.activeId);
+    if (folder) this.folders.set(id, folder);
     this.activeId = id; this.save();
   }
   touchTitle(): void {
@@ -65,6 +98,8 @@ export class SessionStore {
     if (raw && raw.metas?.length) {
       const order = raw.metas.map((m) => m.id);
       const titles = new Map(raw.metas.map((m) => [m.id, m.title] as const));
+      const folders = new Map(raw.metas.filter((m) => m.folder).map((m) => [m.id, m.folder!] as const));
+      const personaIds = new Map(raw.metas.filter((m) => m.personaId).map((m) => [m.id, m.personaId!] as const));
       const sessions = new Map<string, Session>();
       for (const id of order) {
         const s = new Session();
@@ -72,14 +107,13 @@ export class SessionStore {
         sessions.set(id, s);
       }
       const activeId = sessions.has(raw.activeId) ? raw.activeId : order[0];
-      return new SessionStore(state, activeId, order, titles, sessions);
+      return new SessionStore(state, activeId, order, titles, folders, personaIds, sessions);
     }
-    // fresh or legacy migration
     const legacy = state.get(LEGACY);
     const s = new Session();
     try { if (legacy) s.messages = validateHistory(legacy); } catch { s.messages = []; }
     const id = randomUUID();
-    const store = new SessionStore(state, id, [id], new Map([[id, 'New chat']]), new Map([[id, s]]));
+    const store = new SessionStore(state, id, [id], new Map([[id, 'New chat']]), new Map(), new Map(), new Map([[id, s]]));
     store.touchTitle();
     store.save();
     return store;

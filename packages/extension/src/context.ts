@@ -7,6 +7,8 @@ export interface ChatContext {
   selection: SelectionCtx | null;
   mentions: AttachedFile[];
   codebase?: { file: string; startLine: number; endLine: number; text: string }[] | null;
+  docs?: { file: string; startLine: number; endLine: number; text: string }[] | null;
+  images?: { mime: string; base64: string; name: string }[];
 }
 
 export function parseMentions(input: string): string[] {
@@ -33,11 +35,23 @@ function fileBlock(label: string, f: AttachedFile): string {
   return `${head}\n\`\`\`${f.language}\n${f.content}\n\`\`\`${diag}`;
 }
 
+export function buildDocsBlock(hits: { file: string; startLine: number; endLine: number; text: string }[]): string {
+  if (!hits.length) return '';
+  const blocks = hits.map((h) => `[doc] ${h.file}:L${h.startLine}-L${h.endLine}\n\`\`\`\n${h.text}\n\`\`\``);
+  return `The following document excerpts were retrieved:\n\n${blocks.join('\n\n')}`;
+}
+
 export function buildContextPreamble(ctx: ChatContext): string {
   const parts: string[] = [];
   if (ctx.file) parts.push(fileBlock('active file', ctx.file));
   if (ctx.selection) parts.push(`[context] selection ${ctx.selection.relPath} L${ctx.selection.startLine}-${ctx.selection.endLine}\n\`\`\`\n${ctx.selection.text}\n\`\`\``);
   for (const mn of ctx.mentions) parts.push(fileBlock('mentioned file', mn));
-  if (ctx.codebase && ctx.codebase.length) parts.push(buildCodebaseBlock(ctx.codebase));
+  if (ctx.codebase?.length) parts.push(buildCodebaseBlock(ctx.codebase));
+  if (ctx.docs?.length) parts.push(buildDocsBlock(ctx.docs));
+  if (ctx.images?.length) {
+    for (const img of ctx.images) {
+      parts.push(`[image attached: ${img.name} (${img.mime})]\n(data available for vision-capable models)`);
+    }
+  }
   return parts.join('\n\n');
 }

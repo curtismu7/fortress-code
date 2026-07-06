@@ -16,7 +16,15 @@ export const TOOL_SCHEMAS = [
   { type: 'function', function: { name: 'edit_file', description: 'Replace the full contents of a file (or create it). The user reviews a diff and can reject.', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string', description: 'complete new file contents' } }, required: ['path', 'content'] } } },
   { type: 'function', function: { name: 'create_file', description: 'Create a NEW file (fails if it already exists). The user reviews the content and can reject.', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string', description: 'complete file contents' } }, required: ['path', 'content'] } } },
   { type: 'function', function: { name: 'run_command', description: 'Run a shell command in the workspace root (e.g. run tests/build/lint). The user MUST approve it before it runs; stdout+stderr is returned.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'the shell command to run' } }, required: ['command'] } } },
+  { type: 'function', function: { name: 'web_search', description: 'Search the web for current information (US-governed DuckDuckGo). Use sparingly.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'remember', description: 'Save a short fact to the user\'s local memory file for future chats (only when the user asked you to remember).', parameters: { type: 'object', properties: { fact: { type: 'string' } }, required: ['fact'] } } },
 ];
+
+export interface ToolExtras {
+  remember?: (fact: string) => string;
+  webSearch?: (query: string) => Promise<string>;
+  mcpCall?: (name: string, args: Record<string, unknown>) => Promise<string>;
+}
 
 export function resolveInWorkspace(root: string, relPath: string): string {
   const abs = resolve(root, relPath);
@@ -63,7 +71,7 @@ export async function editFileWithApproval(abs: string, content: string, rel: st
   }
 }
 
-export async function executeTool(name: string, args: any, workspaceRoot: string): Promise<string> {
+export async function executeTool(name: string, args: any, workspaceRoot: string, extras?: ToolExtras): Promise<string> {
   switch (name) {
     case 'read_file': {
       const abs = resolveInWorkspace(workspaceRoot, String(args.path));
@@ -121,7 +129,16 @@ export async function executeTool(name: string, args: any, workspaceRoot: string
         return truncate(`command failed${e?.code != null ? ` (exit ${e.code})` : ''}${e?.killed ? ' (timed out after 60s)' : ''}:\n${out || e?.message || String(e)}`);
       }
     }
+    case 'web_search': {
+      if (!extras?.webSearch) return 'web search is disabled';
+      return extras.webSearch(String(args.query));
+    }
+    case 'remember': {
+      if (!extras?.remember) return 'memory is disabled';
+      return extras.remember(String(args.fact));
+    }
     default:
+      if (extras?.mcpCall && name.includes('__')) return extras.mcpCall(name, args);
       return `unknown tool: ${name}`;
   }
 }

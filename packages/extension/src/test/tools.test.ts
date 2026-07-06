@@ -13,8 +13,8 @@ describe('resolveInWorkspace', () => {
 });
 
 describe('TOOL_SCHEMAS', () => {
-  it('exposes exactly the six agent tools', () => {
+  it('exposes exactly the eight agent tools', () => {
     const names = TOOL_SCHEMAS.map((t: any) => t.function.name).sort();
-    expect(names).toEqual(['create_file', 'edit_file', 'list_files', 'read_file', 'run_command', 'search']);
+    expect(names).toEqual(['create_file', 'edit_file', 'list_files', 'read_file', 'remember', 'run_command', 'search', 'web_search']);
   });
 });

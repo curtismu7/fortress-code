@@ -23,7 +23,12 @@
           <span id="rag-status">Not indexed</span>
         </div>
         <div id="rag-bar" class="dlbar" hidden><span id="rag-fill"></span></div>
-        <div id="rag-hint">Type <b>@codebase</b> in a message to search the whole repo.</div>
+        <div id="rag-hint">Type <b>@codebase</b> to search the repo.</div>
+      </div>
+      <div id="docs-row">
+        <button id="docs-index">Add documents</button>
+        <span id="docs-status">No docs indexed</span>
+        <div id="docs-hint">Type <b>@docs</b> to search indexed documents.</div>
       </div>
       <div id="add-row"><input id="add-slug" placeholder="Add an OpenRouter model (e.g. openai/gpt-4o)" /><button id="add-btn">＋ Add</button></div>
       <div id="add-blocked" hidden></div>
@@ -42,11 +47,18 @@
 
   <header id="chat-head" hidden>
     <input id="chat-search" placeholder="Search chats" />
+    <select id="folder-filter" title="Folder"><option value="">All folders</option></select>
     <select id="chat-picker" title="Chats"></select>
+    <select id="persona-picker" title="Persona"><option value="">Default persona</option></select>
+    <select id="compare-picker" title="Compare with"><option value="">No compare</option></select>
     <span id="active-model"></span>
     <label><input type="checkbox" id="agent-toggle" /> Agent</label>
     <button id="new-chat">New chat</button>
     <button id="export-chat" title="Export chat as Markdown">Export</button>
+    <button id="memory-btn" title="Memory">Memory</button>
+    <button id="personas-btn" title="Personas">Personas</button>
+    <button id="attach-img" title="Attach image">📷</button>
+    <button id="speak-btn" title="Read last reply aloud">🔊</button>
     <button id="params-btn" title="Model parameters">⚙</button>
     <button id="prompts-btn" title="Prompt library">Prompts</button>
   </header>
@@ -65,6 +77,26 @@
       <button id="prompts-close">Close</button>
     </div>
   </div>
+  <div id="personas-mgr" hidden>
+    <div id="personas-list"></div>
+    <input id="pe-name" placeholder="Persona name" />
+    <textarea id="pe-prompt" placeholder="System prompt"></textarea>
+    <div class="pr-actions">
+      <button id="pe-save">Save persona</button>
+      <button id="personas-close">Close</button>
+    </div>
+  </div>
+  <div id="memory-mgr" hidden>
+    <label><input type="checkbox" id="mem-enabled" /> Enable memory in prompts</label>
+    <textarea id="mem-facts" placeholder="One fact per line"></textarea>
+    <button id="mem-save">Save memory</button>
+    <button id="memory-close">Close</button>
+  </div>
+  <div id="artifact-pane" hidden>
+    <div class="artifact-head"><span>Artifact preview</span><button id="artifact-close">×</button></div>
+    <iframe id="artifact-frame" sandbox="allow-scripts" title="Artifact"></iframe>
+  </div>
+  <div id="compare-pane" hidden><div id="compare-a"></div><div id="compare-b"></div></div>
   <main id="messages"></main>
   <div id="steps" hidden></div>
   <div id="slash-menu" hidden></div>

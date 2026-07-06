@@ -7,6 +7,7 @@ import { DaemonClient } from '../daemon';
 import { RagService } from '../rag/service';
 import { Debouncer } from '../rag/watcher';
 import { SessionStore } from '../sessionStore';
+import { Session } from './session';
 import { splitThink } from '../reasoning';
 import { resolveTarget, type ResolvedTarget } from '../providers/target';
 import { resolveDevTarget } from '../providers/dev';
@@ -17,9 +18,14 @@ import { runAgentTurn } from '../agent/loop';
 import { getOpenRouterKey, setOpenRouterKey, getFireworksKey, setFireworksKey } from '../secrets';
 import { buildContextPreamble, parseMentions, capContent, type ChatContext, type AttachedFile } from '../context';
 import { resolveInWorkspace, editFileWithApproval } from '../agent/tools';
-import { Prefs } from '../prefs';
+import { Prefs, type Persona } from '../prefs';
 import { searchChats } from '../chatSearch';
 import { exportMarkdown } from '../exportChat';
+import { MemoryStore } from '../memory';
+import { DocsService } from '../docsService';
+import { McpClient, parseMcpConfigs } from '../mcpClient';
+import { webSearch } from '../webSearch';
+import { speakText } from '../voice';
 
 const SYSTEM_PROMPT = 'You are Fortress Code, a helpful local coding assistant.';
 
@@ -27,6 +33,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | null = null;
   private client: DaemonClient | null = null;
   private rag: RagService | null = null;
+  private docs: DocsService | null = null;
+  private mcpClients: McpClient[] = [];
+  private mcpTools: object[] = [];
+  private pendingImages: { mime: string; base64: string; name: string }[] = [];
+  private compareModelId: string | null = null;
   private store: SessionStore;
   private generating: AbortController | null = null;
   private agentMode = false;
@@ -80,11 +91,72 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return this.rag;
   }
 
+  private docsService(): DocsService {
+    if (!this.docs) {
+      const dir = vscode.Uri.joinPath(this.context.globalStorageUri, 'docs-index').fsPath;
+      this.docs = new DocsService(dir);
+    }
+    return this.docs;
+  }
+
+  private memoryPath(): string {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, 'memory.json').fsPath;
+  }
+
+  private memoryData(): ReturnType<MemoryStore['load']> {
+    return new MemoryStore(this.memoryPath()).load();
+  }
+
+  /** Build system prompt from persona, memory, and defaults. */
+  private systemPromptForChat(): string {
+    const meta = this.store.metas().find((m) => m.id === this.store.activeId);
+    const persona = meta?.personaId ? this.prefs.personas().find((p) => p.id === meta.personaId) : undefined;
+    const mem = MemoryStore.preamble(this.memoryData());
+    const base = persona?.systemPrompt?.trim() || SYSTEM_PROMPT;
+    return mem ? `${base}\n\n${mem}` : base;
+  }
+
+  private toolExtras() {
+    const memPath = this.memoryPath();
+    return {
+      webSearch: (q: string) => webSearch(q),
+      remember: (fact: string) => {
+        const store = new MemoryStore(memPath);
+        const data = store.load();
+        data.enabled = true;
+        if (fact.trim() && !data.facts.includes(fact.trim())) data.facts.push(fact.trim());
+        store.save(data);
+        this.post({ type: 'memory', data });
+        return 'saved to local memory';
+      },
+      mcpCall: async (name: string, args: Record<string, unknown>) => {
+        for (const c of this.mcpClients) {
+          try { return await c.callTool(name, args); } catch { continue; }
+        }
+        return 'mcp tool not found';
+      },
+    };
+  }
+
+  private async initMcp(): Promise<void> {
+    const cfgs = parseMcpConfigs(vscode.workspace.getConfiguration('fortressCode').get('mcpServers'));
+    for (const c of this.mcpClients) c.dispose();
+    this.mcpClients = cfgs.map((cfg) => new McpClient(cfg));
+    this.mcpTools = [];
+    for (const client of this.mcpClients) {
+      try { this.mcpTools.push(...client.openAiSchemas()); await client.connect(); } catch { /* skip broken server */ }
+    }
+  }
+
   private async init(): Promise<void> {
     try {
       this.client = await this.connect();
       this.post({ type: 'policy', local: localEntries(), openrouter: loadPolicy().filter((e) => e.provider === 'openrouter') });
-      this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() });
+      this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), personas: this.prefs.personas() });
+      this.post({ type: 'memory', data: this.memoryData() });
+      this.post({ type: 'folders', folders: this.store.listFolders() });
+      this.post({ type: 'docsStatus', stats: this.docsService().stats() });
+      await this.initMcp();
       this.post({ type: 'openRouterKeySet', set: !!(await getOpenRouterKey(this.context.secrets)) });
       await this.postDev();
       this.post({ type: 'history', messages: this.store.active().messages });
@@ -159,7 +231,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     const mentions: AttachedFile[] = [];
     if (root) for (const mrel of parseMentions(userText)) {
-      if (mrel === 'codebase') continue;
+      if (mrel === 'codebase' || mrel === 'docs') continue;
       const mid = 'mention:' + mrel;
       if (this.excluded.has(mid)) continue;
       try {
@@ -174,7 +246,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       try { codebase = await rag.retrieveHits(this.client, userText); }
       catch (e) { this.banner(`@codebase retrieval failed: ${e instanceof Error ? e.message : e}`); }
     }
-    return { file, selection, mentions, codebase };
+    let docs: ChatContext['docs'] = null;
+    if (parseMentions(userText).includes('docs') && this.client) {
+      try { docs = await this.docsService().retrieveHits(this.client, userText); }
+      catch (e) { this.banner(`@docs retrieval failed: ${e instanceof Error ? e.message : e}`); }
+    }
+    const images = this.pendingImages.length ? [...this.pendingImages] : undefined;
+    this.pendingImages = [];
+    return { file, selection, mentions, codebase, docs, images };
   }
 
   private async postChips(): Promise<void> {
@@ -299,7 +378,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'deletePrompt': this.prefs.deletePrompt(String(m.id)); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() }); return;
         case 'setParams': this.prefs.setParams(m.params ?? {}); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() }); return;
         case 'forkChat': this.generating?.abort(); this.store.fork(Number(m.index)); this.post({ type: 'history', messages: this.store.active().messages }); this.postChats(); return;
-        case 'searchChats': this.post({ type: 'searchResults', metas: searchChats(String(m.query ?? ''), this.store.metas(), this.store.messagesById()) }); return;
+        case 'searchChats': this.post({ type: 'searchResults', metas: searchChats(String(m.query ?? ''), this.store.metas(), this.store.messagesById(), m.folder ? String(m.folder) : undefined) }); return;
+        case 'setFolder': this.store.setFolder(this.store.activeId, m.folder ? String(m.folder) : undefined); this.post({ type: 'folders', folders: this.store.listFolders() }); this.postChats(); return;
+        case 'setPersona': this.store.setPersona(this.store.activeId, m.personaId ? String(m.personaId) : undefined); this.postChats(); return;
+        case 'savePersona': this.prefs.savePersona(m.persona as Persona); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), personas: this.prefs.personas() }); return;
+        case 'deletePersona': this.prefs.deletePersona(String(m.id)); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), personas: this.prefs.personas() }); return;
+        case 'setMemory': {
+          const store = new MemoryStore(this.memoryPath());
+          store.save({ enabled: !!m.enabled, facts: Array.isArray(m.facts) ? m.facts.map(String) : store.load().facts });
+          this.post({ type: 'memory', data: store.load() }); return;
+        }
+        case 'indexDocs': {
+          const picks = await vscode.window.showOpenDialog({ canSelectMany: true, openLabel: 'Index documents', filters: { Documents: ['txt', 'md', 'markdown', 'json', 'csv'] } });
+          if (!picks?.length) return;
+          const client = await this.ensureClient();
+          await this.docsService().indexFiles(client, picks.map((u) => u.fsPath), (n, t) => this.post({ type: 'docsProgress', done: n, total: t }));
+          this.post({ type: 'docsStatus', stats: this.docsService().stats() }); return;
+        }
+        case 'attachImage': {
+          const picks = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { Images: ['png', 'jpg', 'jpeg', 'gif', 'webp'] } });
+          if (!picks?.[0]) return;
+          const buf = readFileSync(picks[0].fsPath);
+          const ext = picks[0].fsPath.split('.').pop()?.toLowerCase() ?? 'png';
+          const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
+          this.pendingImages.push({ mime, base64: buf.toString('base64'), name: picks[0].fsPath.split('/').pop() ?? 'image' });
+          this.post({ type: 'attachedImages', count: this.pendingImages.length }); return;
+        }
+        case 'speakLast': {
+          const msgs = this.store.active().messages;
+          const last = [...msgs].reverse().find((x) => x.role === 'assistant');
+          if (last) void speakText(last.content).catch((e) => this.banner(String(e))); return;
+        }
+        case 'setCompareModel': this.compareModelId = m.id ? String(m.id) : null; this.post({ type: 'compareModel', id: this.compareModelId }); return;
+        case 'showArtifact': this.post({ type: 'artifact', html: String(m.html ?? '') }); return;
         case 'exportChat': {
           const title = this.store.metas().find((x) => x.id === this.store.activeId)?.title ?? 'Chat';
           const md = exportMarkdown(title, this.store.active().messages, new Date());
@@ -394,15 +505,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const session = this.store.active();
     const ctx = await this.collectContext(text);
     const preamble = buildContextPreamble(ctx);
-    const sys = SYSTEM_PROMPT + (preamble ? '\n\n---\n' + preamble : '');
+    const sys = this.systemPromptForChat() + (preamble ? '\n\n---\n' + preamble : '');
     const preTurnLen = session.messages.length;
     session.addUser(text);
     this.post({ type: 'history', messages: session.messages });
     this.generating = new AbortController();
     let usage: Usage | null = null;
     try {
-      if (this.agentMode) {
-        await runAgentTurn(target, session, sys, (step) => this.post({ type: 'agentStep', step }), this.generating.signal);
+      if (this.compareModelId) {
+        const entry = loadPolicy().find((e) => e.id === this.compareModelId);
+        if (entry) {
+          const targetB = await resolveTarget(entry, await this.targetDeps());
+          const sessionB = new Session();
+          sessionB.messages = session.messages.map((m) => ({ ...m }));
+          this.post({ type: 'compareStart' });
+          await Promise.all([
+            (async () => {
+              if (this.agentMode) await runAgentTurn(target, session, sys, (step) => this.post({ type: 'agentStep', step: `[A] ${step}` }), this.generating!.signal, { extraTools: this.mcpTools, toolExtras: this.toolExtras() });
+              else {
+                const r = await streamChat(target, session.toRequestMessages(sys), (t) => this.post({ type: 'token', text: t }), this.generating!.signal, (t) => this.post({ type: 'reasoning', text: t }));
+                session.addAssistant(splitThink(r.content).content || '(no reply)');
+                usage = r.usage;
+              }
+            })(),
+            (async () => {
+              const r = await streamChat(targetB, sessionB.toRequestMessages(sys), (t) => this.post({ type: 'compareToken', side: 'B', text: t }), this.generating!.signal);
+              this.post({ type: 'compareDone', side: 'B', content: splitThink(r.content).content || '(no reply)' });
+            })(),
+          ]);
+          this.post({ type: 'compareDone', side: 'A', content: session.messages[session.messages.length - 1]?.content ?? '' });
+        }
+      } else if (this.agentMode) {
+        await runAgentTurn(target, session, sys, (step) => this.post({ type: 'agentStep', step }), this.generating.signal, { extraTools: this.mcpTools, toolExtras: this.toolExtras() });
       } else {
         const r = await streamChat(target, session.toRequestMessages(sys),
           (t) => this.post({ type: 'token', text: t }), this.generating.signal,

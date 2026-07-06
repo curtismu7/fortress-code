@@ -19,6 +19,25 @@
   "main": "./out/extension.js",
   "activationEvents": [],
   "contributes": {
+    "configuration": {
+      "title": "Fortress Code",
+      "properties": {
+        "fortressCode.mcpServers": {
+          "type": "array",
+          "default": [],
+          "description": "MCP stdio servers for agent mode (name, command, args).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "command": { "type": "string" },
+              "args": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["name", "command"]
+          }
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

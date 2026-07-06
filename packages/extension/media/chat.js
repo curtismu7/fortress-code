@@ -38,7 +38,7 @@ function renderMarkdown(text) {
       const code = (nl >= 0 ? parts[i].slice(nl + 1) : parts[i]).replace(/\n$/, '');
       const id = cbCodes.push(code) - 1;
       const langClass = /^[\w-]+$/.test(lang) ? ` language-${lang}` : '';
-      out += `<div class="codeblock"><div class="cb-head"><span>${esc(lang || 'code')}</span><span class="cb-btns"><button data-cb="${id}" data-act="copy">Copy</button><button data-cb="${id}" data-act="insert">Insert</button><button data-cb="${id}" data-act="apply">Apply</button></span></div><pre><code class="${langClass.trim()}">${esc(code)}</code></pre></div>`;
+      out += `<div class="codeblock"><div class="cb-head"><span>${esc(lang || 'code')}</span><span class="cb-btns"><button data-cb="${id}" data-act="copy">Copy</button><button data-cb="${id}" data-act="insert">Insert</button><button data-cb="${id}" data-act="apply">Apply</button>${lang === 'html' ? `<button data-cb="${id}" data-act="artifact">Artifact</button>` : ''}</span></div><pre><code class="${langClass.trim()}">${esc(code)}</code></pre></div>`;
     } else if (parts[i]) {
       out += `<div class="md">${renderInline(parts[i])}</div>`;
     }
@@ -219,7 +219,35 @@ window.addEventListener('message', (e) => {
   if (m.type === 'reasoningDone') { const b = document.querySelector('.reasoning-live'); if (b) b.open = false; }
   if (m.type === 'usage' && m.usage) { const u = $('usage-last'); if (u) u.textContent = `↑${m.usage.promptTokens} ↓${m.usage.completionTokens} tok`; }
   if (m.type === 'chats') { window.__lastChats = m; renderChatPicker(m.metas, m.activeId); }
-  if (m.type === 'prefs') { window.__prefs = { prompts: m.prompts || [], params: m.params || {} }; fillParams(); renderPrompts(); }
+  if (m.type === 'prefs') {
+    window.__prefs = { prompts: m.prompts || [], params: m.params || {}, personas: m.personas || [] };
+    fillParams(); renderPrompts(); renderPersonas(); fillComparePicker();
+  }
+  if (m.type === 'memory') {
+    window.__memory = m.data || { enabled: false, facts: [] };
+    fillMemory();
+  }
+  if (m.type === 'folders') renderFolderFilter(m.folders || []);
+  if (m.type === 'docsStatus') {
+    const s = m.stats || { files: 0, chunks: 0 };
+    const el = $('docs-status'); if (el) el.textContent = s.chunks ? `${s.files} docs · ${s.chunks} chunks` : 'No docs indexed';
+  }
+  if (m.type === 'docsProgress') {
+    const el = $('docs-status'); if (el) el.textContent = `Indexing docs ${m.done}/${m.total}…`;
+  }
+  if (m.type === 'attachedImages') {
+    const el = $('meter'); if (el) el.textContent = `${m.count} image(s) attached`;
+  }
+  if (m.type === 'artifact') {
+    const pane = $('artifact-pane'); const frame = $('artifact-frame');
+    if (pane && frame) { pane.hidden = false; frame.srcdoc = String(m.html || ''); }
+  }
+  if (m.type === 'compareStart') { const p = $('compare-pane'); if (p) { p.hidden = false; $('compare-a').textContent = ''; $('compare-b').textContent = ''; } }
+  if (m.type === 'compareToken' && m.side === 'B') { const b = $('compare-b'); if (b) b.textContent += m.text; }
+  if (m.type === 'compareDone') {
+    const el = m.side === 'A' ? $('compare-a') : $('compare-b');
+    if (el && m.content) el.textContent = m.content;
+  }
   if (m.type === 'searchResults') { renderChatPicker(m.metas, $('chat-picker') ? $('chat-picker').value : undefined); }
   if (m.type === 'contextWindow') { window.__ctxWindow = m.tokens; updateMeter(); }
   if (m.type === 'devMode') {
@@ -328,6 +356,34 @@ function fillParams() {
   const mt = $('p-maxtok'); if (mt) mt.value = params.max_tokens != null ? String(params.max_tokens) : '';
 }
 
+function renderPersonas() {
+  const list = (window.__prefs && window.__prefs.personas) || [];
+  const box = $('personas-list'); if (box) box.innerHTML = list.map((p) => `<div class="prompt-item"><span>${esc(p.name)}</span></div>`).join('');
+  const pick = $('persona-picker'); if (!pick) return;
+  const keep = pick.value;
+  pick.innerHTML = '<option value="">Default persona</option>' + list.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  pick.value = keep;
+}
+
+function fillComparePicker() {
+  const pick = $('compare-picker'); if (!pick) return;
+  const models = [...(policy.local || []), ...(policy.openrouter || [])];
+  pick.innerHTML = '<option value="">No compare</option>' + models.map((m) => `<option value="${m.id}">${esc(m.displayName)}</option>`).join('');
+}
+
+function fillMemory() {
+  const data = window.__memory || { enabled: false, facts: [] };
+  const en = $('mem-enabled'); if (en) en.checked = !!data.enabled;
+  const ta = $('mem-facts'); if (ta) ta.value = (data.facts || []).join('\n');
+}
+
+function renderFolderFilter(folders) {
+  const sel = $('folder-filter'); if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">All folders</option>' + folders.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('') + '<option value="__new__">+ New folder…</option>';
+  sel.value = keep;
+}
+
 function renderPrompts() {
   const box = $('prompts-list');
   if (!box) return;
@@ -412,9 +468,37 @@ $('banner-close').onclick = () => { $('banner').hidden = true; };
 
 { const _cs = $('chat-search'); if (_cs) _cs.oninput = () => {
   const q = _cs.value;
+  const folder = ($('folder-filter') && $('folder-filter').value) || '';
   if (!q.trim()) { if (window.__lastChats) renderChatPicker(window.__lastChats.metas, window.__lastChats.activeId); return; }
-  vscode.postMessage({ type: 'searchChats', query: q });
+  vscode.postMessage({ type: 'searchChats', query: q, folder: folder && folder !== '__new__' ? folder : '' });
 }; }
+{ const _ff = $('folder-filter'); if (_ff) _ff.onchange = () => {
+  if (_ff.value === '__new__') {
+    const name = prompt('Folder name'); if (name) vscode.postMessage({ type: 'setFolder', folder: name });
+    return;
+  }
+  _ff.oninput && $('chat-search').dispatchEvent(new Event('input'));
+}; }
+{ const _pp = $('persona-picker'); if (_pp) _pp.onchange = () => vscode.postMessage({ type: 'setPersona', personaId: _pp.value || null }); }
+{ const _cp = $('compare-picker'); if (_cp) _cp.onchange = () => vscode.postMessage({ type: 'setCompareModel', id: _cp.value || null }); }
+{ const _di = $('docs-index'); if (_di) _di.onclick = () => vscode.postMessage({ type: 'indexDocs' }); }
+{ const _ai = $('attach-img'); if (_ai) _ai.onclick = () => vscode.postMessage({ type: 'attachImage' }); }
+{ const _sb = $('speak-btn'); if (_sb) _sb.onclick = () => vscode.postMessage({ type: 'speakLast' }); }
+{ const _mb = $('memory-btn'); if (_mb) _mb.onclick = () => { const mgr = $('memory-mgr'); if (mgr) { mgr.hidden = !mgr.hidden; fillMemory(); } }; }
+{ const _mc = $('memory-close'); if (_mc) _mc.onclick = () => { const mgr = $('memory-mgr'); if (mgr) mgr.hidden = true; }; }
+{ const _ms = $('mem-save'); if (_ms) _ms.onclick = () => {
+  const facts = ($('mem-facts')?.value || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  vscode.postMessage({ type: 'setMemory', enabled: !!$('mem-enabled')?.checked, facts });
+}; }
+{ const _pb2 = $('personas-btn'); if (_pb2) _pb2.onclick = () => { const mgr = $('personas-mgr'); if (mgr) { mgr.hidden = !mgr.hidden; renderPersonas(); } }; }
+{ const _pc = $('personas-close'); if (_pc) _pc.onclick = () => { const mgr = $('personas-mgr'); if (mgr) mgr.hidden = true; }; }
+{ const _ps2 = $('pe-save'); if (_ps2) _ps2.onclick = () => {
+  const name = $('pe-name')?.value.trim(); const text = $('pe-prompt')?.value.trim();
+  if (!name || !text) return;
+  vscode.postMessage({ type: 'savePersona', persona: { id: crypto.randomUUID(), name, systemPrompt: text } });
+  $('pe-name').value = ''; $('pe-prompt').value = '';
+}; }
+{ const _ac = $('artifact-close'); if (_ac) _ac.onclick = () => { const p = $('artifact-pane'); if (p) p.hidden = true; }; }
 { const _ec = $('export-chat'); if (_ec) _ec.onclick = () => vscode.postMessage({ type: 'exportChat' }); }
 { const _pb = $('params-btn'); if (_pb) _pb.onclick = () => { const pop = $('params-pop'); if (pop) pop.hidden = !pop.hidden; }; }
 { const _pa = $('params-apply'); if (_pa) _pa.onclick = () => {
@@ -480,6 +564,7 @@ $('messages').addEventListener('click', (e) => {
     if (b.dataset.act === 'copy') { navigator.clipboard.writeText(code); b.textContent = 'Copied'; setTimeout(() => (b.textContent = 'Copy'), 900); }
     if (b.dataset.act === 'insert') vscode.postMessage({ type: 'insertCode', code });
     if (b.dataset.act === 'apply') vscode.postMessage({ type: 'applyCode', code });
+    if (b.dataset.act === 'artifact') vscode.postMessage({ type: 'showArtifact', html: code });
     return;
   }
   if (e.target.closest('.regen')) { turnReasoning = ''; vscode.postMessage({ type: 'regenerate' }); return; }
