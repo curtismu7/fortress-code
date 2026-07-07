@@ -127,13 +127,15 @@
         <div id="rag-bar" class="dlbar" hidden><span id="rag-fill"></span></div>
         <div class="settings-row-inline">
           <button type="button" id="docs-index">Add documents</button>
-          <span id="docs-status">No docs</span>
+          <span id="docs-status">No docs indexed</span>
         </div>
+        <p class="settings-hint">Index text or PDF files for <b>@docs</b>. PDFs must not be password-protected.</p>
         <p class="settings-hint">Type <b>@</b> for files, <b>@codebase</b>, or <b>@docs</b>.</p>
       </details>
 
       <details class="settings-section">
         <summary>Memory</summary>
+        <p class="settings-hint">Stored locally on this device. Included in prompts only when enabled.</p>
         <label class="settings-row"><input type="checkbox" id="mem-enabled" /> Include in prompts</label>
         <textarea id="mem-facts" placeholder="One fact per line"></textarea>
         <button type="button" id="mem-save">Save memory</button>

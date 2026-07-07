@@ -2,7 +2,7 @@
   "name": "fortress-chat",
   "displayName": "FortressChat",
   "description": "Local US-model chat + agent for VS Code. Memory-safe llama.cpp management built in.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "coachcurtis",
   "repository": {
     "type": "git",
@@ -29,16 +29,33 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string", "description": "Short label shown in the chat UI" },
-              "command": { "type": "string", "description": "Executable (e.g. npx, node, uv)" },
-              "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments" },
+              "name": {
+                "type": "string",
+                "description": "Short label shown in the chat UI"
+              },
+              "command": {
+                "type": "string",
+                "description": "Executable (e.g. npx, node, uv)"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Command arguments"
+              },
               "env": {
                 "type": "object",
-                "additionalProperties": { "type": "string" },
+                "additionalProperties": {
+                  "type": "string"
+                },
                 "description": "Extra environment variables for the server process"
               }
             },
-            "required": ["name", "command"]
+            "required": [
+              "name",
+              "command"
+            ]
           }
         },
         "fortressChat.skillDirectories": {
@@ -50,7 +67,9 @@
             ".fortress/skills"
           ],
           "description": "Directories to scan recursively for SKILL.md files (supports ~ and workspace-relative paths).",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -182,7 +201,8 @@
     "typecheck": "tsc -p tsconfig.typecheck.json"
   },
   "dependencies": {
-    "@fortress-chat/shared": "0.1.0"
+    "@fortress-chat/shared": "0.1.0",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
