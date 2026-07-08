@@ -63,23 +63,26 @@
         <button type="button" id="action-btn" class="action-plus" title="Add context, tools, and modes">+</button>
         <textarea id="input" rows="1" placeholder="Reply to FortressChat…"></textarea>
       </div>
-      <div class="composer-actions">
-        <span id="mode-badge" class="mode-badge" hidden></span>
-        <button type="button" id="cancel" class="icon-btn" hidden title="Stop">■</button>
-        <button type="button" id="send" class="send-btn" title="Send">↑</button>
+      <div class="composer-footer">
+        <div id="composer-mode-bar" class="composer-mode-bar">
+          <div class="mode-pills" role="group" aria-label="Chat mode">
+            <button type="button" class="mode-pill" data-mode="ask">Ask</button>
+            <button type="button" class="mode-pill" data-mode="plan">Plan</button>
+            <button type="button" class="mode-pill" data-mode="agent">Agent</button>
+          </div>
+          <div class="run-pills" role="group" aria-label="Agent approval">
+            <button type="button" class="run-pill" data-run="manual">Manual</button>
+            <button type="button" class="run-pill" data-run="auto">Auto</button>
+          </div>
+        </div>
+        <div class="composer-actions">
+          <span id="mode-badge" class="mode-badge" hidden></span>
+          <button type="button" id="cancel" class="icon-btn" hidden title="Stop">■</button>
+          <button type="button" id="send" class="send-btn" title="Send">↑</button>
+        </div>
       </div>
     </div>
-    <div id="composer-mode-bar" class="composer-mode-bar">
-      <div class="mode-pills" role="group" aria-label="Chat mode">
-        <button type="button" class="mode-pill" data-mode="ask">Ask</button>
-        <button type="button" class="mode-pill" data-mode="plan">Plan</button>
-        <button type="button" class="mode-pill" data-mode="agent">Agent</button>
-      </div>
-      <div class="run-pills" role="group" aria-label="Agent approval">
-        <button type="button" class="run-pill" data-run="manual">Manual</button>
-        <button type="button" class="run-pill" data-run="auto">Auto</button>
-      </div>
-    </div>
+    <div id="composer-hint" class="composer-hint" hidden></div>
     <div id="composer-status" class="composer-status" hidden></div>
     <div id="action-menu" hidden>
       <input id="action-search" type="text" placeholder="Add agents, context, tools…" autocomplete="off" />

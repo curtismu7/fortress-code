@@ -26,7 +26,7 @@ function allPolicyModels() {
 
 const FOLDER_HINT = 'Please use File → Open Folder to use New agent.';
 
-/** Show a soft hint in the empty state (and composer banner when visible). */
+/** Show a soft hint in the empty state and below the composer when visible. */
 function showHint(message) {
   const text = (message && message.trim()) ? message : '';
   window.__folderHint = text;
@@ -37,16 +37,16 @@ function showHint(message) {
   }
   const empty = $('empty-state');
   if (empty && text) empty.hidden = false;
-  const banner = $('banner');
-  if (banner && text && !$('composer').hidden) {
-    $('banner-text').textContent = text;
-    banner.classList.add('banner--hint');
-    banner.hidden = false;
-    clearTimeout(window.__bannerTimer);
-    window.__bannerTimer = setTimeout(() => {
-      banner.hidden = true;
-      banner.classList.remove('banner--hint');
-    }, 10000);
+  const composerHint = $('composer-hint');
+  const composer = $('composer');
+  if (composerHint) {
+    if (text && composer && !composer.hidden) {
+      composerHint.textContent = text;
+      composerHint.hidden = false;
+    } else {
+      composerHint.hidden = true;
+      composerHint.textContent = '';
+    }
   }
 }
 
@@ -55,6 +55,11 @@ function clearHint() {
   window.__folderHint = '';
   const hint = $('empty-hint');
   if (hint) hint.hidden = true;
+  const composerHint = $('composer-hint');
+  if (composerHint) {
+    composerHint.hidden = true;
+    composerHint.textContent = '';
+  }
   const banner = $('banner');
   if (banner) banner.classList.remove('banner--hint');
 }
