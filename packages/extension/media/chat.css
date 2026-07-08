@@ -224,6 +224,7 @@ input, textarea, select {
 }
 .setup-action:hover { background: var(--fc-bg); }
 .model-row-check { color: var(--fc-accent); font-size: 14px; flex-shrink: 0; }
+.model-row.needs-key .model-row-action { color: var(--fc-accent); font-weight: 600; }
 #setup { padding: 12px 16px; border-bottom: 1px solid var(--fc-border); font-size: 12.5px; }
 #setup[hidden] { display: none !important; }
 #setup progress { width: 100%; margin-top: 8px; }

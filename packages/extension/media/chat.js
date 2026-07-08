@@ -12,7 +12,14 @@ let provider = 'local';
 let policy = { local: [], hidden: [], google: [], openrouter: [] };
 let selectedId = null;
 
-/** Cloud models available when the user has saved the matching API key. */
+/** Cloud models listed in the picker (Google always visible; OpenRouter when key set). */
+function listedCloudModels() {
+  const out = [...(policy.google || [])];
+  if (window.__orKeySet) out.push(...(policy.openrouter || []));
+  return out;
+}
+
+/** Cloud models the user can select and chat with. */
 function cloudModels() {
   const out = [];
   if (window.__googleKeySet) out.push(...(policy.google || []));
@@ -607,7 +614,9 @@ function enhanceRich(container) {
 }
 
 function modelRowMeta(m, status) {
-  if (m.provider === 'google') return { sub: 'Google Gemini · Cloud', action: '' };
+  if (m.provider === 'google') {
+    return { sub: 'Google Gemini · Cloud', action: window.__googleKeySet ? '' : 'Add API key' };
+  }
   if (m.provider === 'openrouter') return { sub: 'Cloud · US providers pinned', action: '' };
   const cid = m.local.catalogId;
   if (status && status.download && status.download.modelId === cid && status.download.totalBytes) {
@@ -626,13 +635,14 @@ function renderModels(status) {
   if (!box) return;
   const local = policy.local || [];
   const hidden = policy.hidden || [];
-  const cloud = cloudModels();
+  const cloud = listedCloudModels();
   const all = [...local, ...hidden, ...cloud];
   const row = (m) => {
     const meta = modelRowMeta(m, status);
     const sel = m.id === selectedId;
     const agent = m.agentCapable ? ' · Agent' : '';
-    return `<button type="button" class="model-row${sel ? ' sel' : ''}" data-id="${esc(m.id)}">
+    const needsKey = m.provider === 'google' && !window.__googleKeySet;
+    return `<button type="button" class="model-row${sel ? ' sel' : ''}${needsKey ? ' needs-key' : ''}" data-id="${esc(m.id)}">
       <span class="model-row-main">
         <span class="model-row-name">${esc(m.displayName)}</span>
         <span class="model-row-sub">${esc(meta.sub)}${agent}</span>
@@ -641,16 +651,25 @@ function renderModels(status) {
     </button>`;
   };
   const hiddenOpen = window.__hiddenModelsOpen !== false;
+  const googleCloud = cloud.filter((m) => m.provider === 'google');
+  const otherCloud = cloud.filter((m) => m.provider !== 'google');
   box.innerHTML = local.map(row).join('') +
     (hidden.length ? `<details class="model-hidden-group"${hiddenOpen ? ' open' : ''}><summary class="model-group-label">Hidden models</summary><div class="model-hidden-list">${hidden.map(row).join('')}</div></details>` : '') +
-    (cloud.length ? `<div class="model-group-label">Cloud models</div>${cloud.map(row).join('')}` : '') +
-    (!window.__googleKeySet ? `<p class="model-group-hint">Add a Google Gemini API key in Settings to use cloud models.</p>` : '');
+    (googleCloud.length ? `<div class="model-group-label">Google Gemini</div>${googleCloud.map(row).join('')}` : '') +
+    (otherCloud.length ? `<div class="model-group-label">Cloud models</div>${otherCloud.map(row).join('')}` : '');
   const hiddenGroup = box.querySelector('.model-hidden-group');
   if (hiddenGroup) hiddenGroup.addEventListener('toggle', () => { window.__hiddenModelsOpen = hiddenGroup.open; });
   box.querySelectorAll('.model-row').forEach((el) => {
     el.onclick = () => {
       const m = all.find((x) => x.id === el.dataset.id);
       if (!m) return;
+      if (m.provider === 'google' && !window.__googleKeySet) {
+        openSettings(true);
+        const gs = $('google-gemini-settings');
+        if (gs) gs.open = true;
+        $('google-key-input')?.focus();
+        return;
+      }
       if (m.provider === 'local' && status && !status.downloadedModelIds.includes(m.local.catalogId)) {
         vscode.postMessage({ type: 'downloadModel', catalogId: m.local.catalogId });
         return;
