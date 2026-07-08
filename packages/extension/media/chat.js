@@ -105,6 +105,30 @@ function showGoogleKeyStatus({ set, message, error, pending }) {
   statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
+/** Show configured local models folder in Settings. */
+function renderModelsDirectory({ path, effective, defaultPath }) {
+  const el = $('models-dir-path');
+  if (!el) return;
+  window.__modelsDirectory = { path, effective, defaultPath };
+  el.textContent = path ? effective : `Default: ${defaultPath}`;
+}
+
+/** Show save/status text under the models folder picker. */
+function showModelsDirStatus(message) {
+  const statusEl = $('models-dir-status');
+  if (!statusEl) return;
+  const section = $('local-models-settings');
+  if (section) section.open = true;
+  if (!message) {
+    statusEl.hidden = true;
+    statusEl.textContent = '';
+    return;
+  }
+  statusEl.hidden = false;
+  statusEl.textContent = message;
+  statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 function openModelPicker() {
   closeSettings(false);
   const p = $('model-picker');
@@ -718,6 +742,8 @@ window.addEventListener('message', (e) => {
       openModelPicker();
     }
   }
+  if (m.type === 'modelsDirectory') renderModelsDirectory(m);
+  if (m.type === 'modelsDirectoryStatus') showModelsDirStatus(m.message);
   if (m.type === 'state') { selectedId = m.selectedId; renderState(m.status); }
   if (m.type === 'history') renderHistory(m.messages);
   if (m.type === 'startRejected') renderRejection(m.rejection, m.modelId);
@@ -1197,7 +1223,10 @@ function openSettings(open) {
   if (!panel || !scrim) return;
   panel.hidden = !open;
   scrim.hidden = !open;
-  if (open) { fillParams(); renderPrompts(); fillMemory(); renderPersonas(); fillPersonaPicker(); }
+  if (open) {
+    fillParams(); renderPrompts(); fillMemory(); renderPersonas(); fillPersonaPicker();
+    if (window.__modelsDirectory) renderModelsDirectory(window.__modelsDirectory);
+  }
 }
 function closeSettings(open) {
   if (open === false) {
@@ -1294,6 +1323,8 @@ document.addEventListener('click', (e) => {
   showGoogleKeyStatus({ set: false, pending: true, message: 'Verifying API key…' });
   vscode.postMessage({ type: 'setGoogleKey', key: k });
 }; }
+{ const _mdp = $('models-dir-pick'); if (_mdp) _mdp.onclick = () => vscode.postMessage({ type: 'pickModelsDirectory' }); }
+{ const _mdc = $('models-dir-clear'); if (_mdc) _mdc.onclick = () => vscode.postMessage({ type: 'clearModelsDirectory' }); }
 { const _ab = $('add-btn'); if (_ab) _ab.onclick = () => { const s = $('add-slug').value.trim(); if (s) vscode.postMessage({ type: 'addModel', slug: s }); }; }
 $('send').onclick = () => {
   let t = $('input').value.trim();

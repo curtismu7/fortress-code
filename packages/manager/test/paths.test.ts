@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { dataDir, writeDaemonInfo, readDaemonInfo, isProcessAlive } from '../src/paths';
+import { dataDir, modelsDir, readModelsDirOverride, writeModelsDirOverride, writeDaemonInfo, readDaemonInfo, isProcessAlive } from '../src/paths';
 
 beforeEach(() => {
   process.env.FC_DATA_DIR = mkdtempSync(join(tmpdir(), 'fc-test-'));
+  delete process.env.FC_MODELS_DIR;
 });
 
 describe('paths', () => {
@@ -27,5 +28,25 @@ describe('paths', () => {
   it('isProcessAlive: own pid alive, absurd pid not', () => {
     expect(isProcessAlive(process.pid)).toBe(true);
     expect(isProcessAlive(2 ** 22 - 7)).toBe(false);
+  });
+
+  it('modelsDir uses default subfolder when no override is set', () => {
+    expect(modelsDir()).toBe(join(dataDir(), 'models'));
+  });
+
+  it('modelsDir honors FC_MODELS_DIR and models-dir.txt override', () => {
+    const custom = join(tmpdir(), 'fc-custom-models');
+    mkdirSync(custom, { recursive: true });
+    process.env.FC_MODELS_DIR = custom;
+    expect(modelsDir()).toBe(custom);
+
+    delete process.env.FC_MODELS_DIR;
+    writeModelsDirOverride(custom);
+    expect(readModelsDirOverride()).toBe(custom);
+    expect(modelsDir()).toBe(custom);
+
+    writeModelsDirOverride(null);
+    expect(readModelsDirOverride()).toBeNull();
+    expect(modelsDir()).toBe(join(dataDir(), 'models'));
   });
 });

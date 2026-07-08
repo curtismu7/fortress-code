@@ -31,6 +31,7 @@ import { loadProjectRules, defaultRulesRel } from '../projectRules';
 import { AgentCheckpoint } from '../agentCheckpoint';
 import { mentionCandidates } from '../mentionFiles';
 import { discoverSkills, type Skill } from '../skills';
+import { defaultModelsDirectory, getModelsDirectory, setModelsDirectory, syncModelsDirectoryConfig } from '../modelsDirectory';
 
 const SYSTEM_PROMPT = 'You are FortressChat, a helpful local coding assistant.';
 
@@ -206,6 +207,49 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return this.client;
   }
 
+  /** Restart the llama.cpp daemon so a new models folder takes effect. */
+  private async restartDaemon(): Promise<void> {
+    if (this.client) {
+      await this.client.shutdown();
+      this.client = null;
+    }
+    try {
+      this.client = await this.connect();
+    } catch (e) {
+      this.banner(`Could not restart FortressChat daemon: ${e}`);
+    }
+    await this.pushStatus();
+  }
+
+  /** Push current models directory settings to the webview. */
+  private postModelsDirectory(target?: vscode.Webview): void {
+    const custom = getModelsDirectory();
+    const msg = {
+      type: 'modelsDirectory',
+      path: custom,
+      effective: custom || defaultModelsDirectory(),
+      defaultPath: defaultModelsDirectory(),
+    };
+    if (target) void target.postMessage(msg);
+    else this.post(msg);
+  }
+
+  /** Save models folder, sync daemon config, and reconnect. */
+  private async applyModelsDirectory(dir: string): Promise<void> {
+    await setModelsDirectory(dir);
+    this.postModelsDirectory();
+    this.post({
+      type: 'modelsDirectoryStatus',
+      message: dir.trim() ? 'Models folder updated. Restarting engine…' : 'Using default models folder. Restarting engine…',
+    });
+    await this.restartDaemon();
+    const custom = getModelsDirectory();
+    this.post({
+      type: 'modelsDirectoryStatus',
+      message: custom ? `Using models in ${custom}` : `Using default folder (${defaultModelsDirectory()})`,
+    });
+  }
+
   private ragService(): RagService | null {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) return null;
@@ -348,6 +392,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async init(): Promise<void> {
     try {
+      syncModelsDirectoryConfig();
       this.sanitizeLocalUsOnly();
       try {
         this.client = await this.connect();
@@ -393,6 +438,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     emit({ type: 'memory', data: this.memoryData() });
     emit({ type: 'folders', folders: this.store.listFolders() });
     emit({ type: 'docsStatus', stats: this.docsService().stats() });
+    this.postModelsDirectoryTarget(emit);
     this.postMcpStatusTarget(emit);
     emit({ type: 'openRouterKeySet', set: !!(await getOpenRouterKey(this.context.secrets)) });
     {
@@ -421,6 +467,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private postChatsTarget(emit: (msg: unknown) => void): void {
     emit({ type: 'chats', metas: this.store.metas(), activeId: this.store.activeId });
+  }
+
+  private postModelsDirectoryTarget(emit: (msg: unknown) => void): void {
+    const custom = getModelsDirectory();
+    emit({
+      type: 'modelsDirectory',
+      path: custom,
+      effective: custom || defaultModelsDirectory(),
+      defaultPath: defaultModelsDirectory(),
+    });
   }
 
   private postAgentUndoTarget(emit: (msg: unknown) => void): void {
@@ -762,6 +818,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return;
         case 'openSkillSettings':
           await vscode.commands.executeCommand('workbench.action.openSettings', 'fortressChat.skillDirectories');
+          return;
+        case 'pickModelsDirectory': {
+          const picks = await vscode.window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            title: 'Choose local models folder',
+          });
+          const dir = picks?.[0]?.fsPath;
+          if (!dir) return;
+          await this.applyModelsDirectory(dir);
+          return;
+        }
+        case 'clearModelsDirectory':
+          await this.applyModelsDirectory('');
           return;
         case 'selectModel': return await this.selectModel(String(m.id));
         case 'addModel': return this.handleAddModel(String(m.slug));

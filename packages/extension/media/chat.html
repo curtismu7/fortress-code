@@ -202,6 +202,17 @@
         <button type="button" id="persona-save">Save persona</button>
       </details>
 
+      <details class="settings-section" id="local-models-settings">
+        <summary>Local models</summary>
+        <p class="settings-hint">Choose where FortressChat looks for downloaded GGUF models. Use catalog subfolders such as <code>gemma-3-4b-qat/gemma-3-4b-it-Q4_K_M.gguf</code>.</p>
+        <p id="models-dir-path" class="settings-hint models-dir-path">Default models folder</p>
+        <div class="settings-row-inline">
+          <button type="button" id="models-dir-pick">Choose folder…</button>
+          <button type="button" id="models-dir-clear">Use default</button>
+        </div>
+        <p id="models-dir-status" class="settings-hint models-dir-status" hidden aria-live="polite"></p>
+      </details>
+
       <details class="settings-section" id="google-gemini-settings">
         <summary>Google Gemini</summary>
         <p class="settings-hint">Add a Google AI API key to use Gemini cloud models. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.</p>

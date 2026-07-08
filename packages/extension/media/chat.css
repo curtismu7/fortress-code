@@ -671,6 +671,20 @@ code.inl { background: var(--vscode-textCodeBlock-background, #2a2a2a); padding:
   background: var(--fc-surface);
   border-color: var(--fc-border);
 }
+.models-dir-path {
+  font-size: 12px;
+  word-break: break-all;
+}
+.models-dir-status {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--vscode-foreground, #0d2b4a);
+  background: var(--vscode-inputValidation-infoBackground, rgba(55, 148, 255, 0.28));
+  border: 1px solid var(--vscode-inputValidation-infoBorder, #3794ff);
+}
+.models-dir-status[hidden] { display: none !important; }
 #mem-facts, #pr-text, #persona-prompt { width: 100%; min-height: 56px; margin: 6px 0; resize: vertical; }
 #persona-name { width: 100%; margin: 6px 0; }
 .prompt-item, .persona-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--fc-border); font-size: 12px; }

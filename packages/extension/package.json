@@ -70,6 +70,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "fortressChat.modelsDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Custom folder for local GGUF models. Each catalog model expects a subfolder (e.g. gemma-3-4b-qat/). Empty uses ~/Library/Application Support/fortress-chat/models."
         }
       }
     },

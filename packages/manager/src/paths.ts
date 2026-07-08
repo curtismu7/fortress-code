@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,7 +26,38 @@ export function dataDir(): string {
 }
 
 export function binDir(): string { return ensure(join(dataDir(), 'bin')); }
-export function modelsDir(): string { return ensure(join(dataDir(), 'models')); }
+
+const modelsDirConfigFile = () => join(dataDir(), 'models-dir.txt');
+
+/** Read custom models directory from env or models-dir.txt. */
+export function readModelsDirOverride(): string | null {
+  const fromEnv = process.env.FC_MODELS_DIR?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const file = modelsDirConfigFile();
+    if (!existsSync(file)) return null;
+    const value = readFileSync(file, 'utf8').trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist custom models directory for the daemon (used by the Mac app / tests). */
+export function writeModelsDirOverride(dir: string | null): void {
+  const file = modelsDirConfigFile();
+  if (!dir?.trim()) {
+    try { unlinkSync(file); } catch { /* already absent */ }
+    return;
+  }
+  writeFileSync(file, `${dir.trim()}\n`, { mode: 0o600 });
+}
+
+export function modelsDir(): string {
+  const custom = readModelsDirOverride();
+  if (custom) return ensure(custom);
+  return ensure(join(dataDir(), 'models'));
+}
 
 const daemonFile = () => join(dataDir(), 'daemon.json');
 
