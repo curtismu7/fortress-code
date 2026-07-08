@@ -17,7 +17,7 @@ import { streamChat, type Usage } from '../providers/stream';
 import { runAgentTurn } from '../agent/loop';
 import { getOpenRouterKey, setOpenRouterKey, getFireworksKey, setFireworksKey, getGoogleKey, setGoogleKey } from '../secrets';
 import { validateGoogleApiKey } from '../providers/validateGoogleKey';
-import { buildContextPreamble, parseMentions, capContent, type ChatContext, type AttachedFile } from '../context';
+import { buildContextPreamble, parseMentions, capContent, hasAttachedContext, contextAttachmentHint, type ChatContext, type AttachedFile } from '../context';
 import { resolveInWorkspace, editFileWithApproval } from '../agent/tools';
 import { Prefs } from '../prefs';
 import { searchChats } from '../chatSearch';
@@ -1153,6 +1153,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const session = this.store.active();
       const ctx = await this.collectContext(text);
       const preamble = buildContextPreamble(ctx);
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!hasAttachedContext(ctx)) {
+        const agentCapable = this.devMode && this.devModel ? true : !!this.selected?.agentCapable;
+        const hintMsg = contextAttachmentHint({ hasFolder: !!root, agentMode: this.agentMode, agentCapable });
+        if (hintMsg) this.hint(hintMsg);
+      }
       const sys = this.systemPromptForChat() + (preamble ? '\n\n---\n' + preamble : '');
       const preTurnLen = session.messages.length;
       session.addUser(text);
@@ -1184,7 +1190,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'compareDone', side: 'A', content: session.messages[session.messages.length - 1]?.content ?? '' });
         }
       } else if (this.agentMode) {
-        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!root) {
           this.banner('Agent mode needs a project folder. Use File → Open Folder (Mac) or open a workspace in VS Code.');
           throw new Error('agent-needs-folder');

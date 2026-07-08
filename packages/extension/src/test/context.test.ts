@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMentions, capContent, buildContextPreamble, type ChatContext } from '../context';
+import { parseMentions, capContent, buildContextPreamble, hasAttachedContext, contextAttachmentHint, type ChatContext } from '../context';
 
 describe('parseMentions', () => {
   it('extracts @paths and dedupes', () => {
@@ -43,5 +43,33 @@ describe('buildContextPreamble', () => {
     expect(out).toContain('src/b.ts');
     expect(out).toContain('truncated');
     expect(out).toContain('TS2345');
+  });
+});
+
+describe('hasAttachedContext', () => {
+  it('is false for empty context', () => {
+    expect(hasAttachedContext({ file: null, selection: null, mentions: [] })).toBe(false);
+  });
+  it('is true when a file is attached', () => {
+    expect(hasAttachedContext({
+      file: { id: 'f', relPath: 'a.ts', language: 'ts', content: 'x', truncated: false, diagnostics: [] },
+      selection: null,
+      mentions: [],
+    })).toBe(true);
+  });
+});
+
+describe('contextAttachmentHint', () => {
+  it('suggests @codebase in ask mode with a folder', () => {
+    expect(contextAttachmentHint({ hasFolder: true, agentMode: false, agentCapable: false })).toMatch(/@codebase/);
+  });
+  it('warns when agent mode is on a non-agent model', () => {
+    expect(contextAttachmentHint({ hasFolder: true, agentMode: true, agentCapable: false })).toMatch(/12B/);
+  });
+  it('is null when agent mode can use tools', () => {
+    expect(contextAttachmentHint({ hasFolder: true, agentMode: true, agentCapable: true })).toBeNull();
+  });
+  it('is null without a folder', () => {
+    expect(contextAttachmentHint({ hasFolder: false, agentMode: false, agentCapable: false })).toBeNull();
   });
 });

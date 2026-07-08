@@ -55,3 +55,20 @@ export function buildContextPreamble(ctx: ChatContext): string {
   }
   return parts.join('\n\n');
 }
+
+/** True when any editor, mention, RAG, or image context is attached to the turn. */
+export function hasAttachedContext(ctx: ChatContext): boolean {
+  return !!(ctx.file || ctx.selection || ctx.mentions.length || ctx.codebase?.length || ctx.docs?.length || ctx.images?.length);
+}
+
+/** Soft hint when a folder is open but the model will not see project files. */
+export function contextAttachmentHint(opts: { hasFolder: boolean; agentMode: boolean; agentCapable: boolean }): string | null {
+  if (!opts.hasFolder) return null;
+  if (opts.agentMode) {
+    if (!opts.agentCapable) {
+      return 'This model cannot use Agent tools. Switch to Gemma 3 12B+ or gpt-oss-20B, or use @codebase / @file in Ask mode.';
+    }
+    return null;
+  }
+  return 'No project files attached. Use @codebase (index workspace first), @path/to/file, or Agent mode with Gemma 3 12B+ to search the repo.';
+}
