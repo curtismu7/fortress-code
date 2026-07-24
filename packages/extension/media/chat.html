@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {cspSource} 'unsafe-inline'; script-src {cspSource}; font-src {cspSource};" />
@@ -21,6 +21,17 @@
     <div class="sidebar-search">
       <input id="sidebar-search" type="text" placeholder="Search chats…" autocomplete="off" />
     </div>
+    <section class="sidebar-mcp" aria-label="MCP controls">
+      <div class="sidebar-mcp-title">MCP</div>
+      <div class="sidebar-mcp-actions">
+        <button type="button" id="sidebar-mcp-fetch" class="sidebar-mcp-btn">Fetch tool list</button>
+        <button type="button" id="sidebar-mcp-tools" class="sidebar-mcp-btn">View tool table</button>
+        <button type="button" id="sidebar-mcp-reload" class="sidebar-mcp-btn">Reload MCP</button>
+        <button type="button" id="sidebar-mcp-import-file" class="sidebar-mcp-btn">Import mcp.json file</button>
+        <button type="button" id="sidebar-mcp-import-paste" class="sidebar-mcp-btn">Configure MCP server</button>
+        <button type="button" id="sidebar-mcp-settings" class="sidebar-mcp-btn">MCP Settings</button>
+      </div>
+    </section>
     <nav id="chat-list" class="chat-list" aria-label="Chat history"></nav>
     <div id="chat-actions-menu" hidden role="menu" aria-label="Chat actions"></div>
   </aside>
@@ -35,7 +46,7 @@
 
   <div id="compare-pane" hidden><div id="compare-a"></div><div id="compare-b"></div></div>
   <div id="artifact-pane" hidden>
-    <div class="artifact-head"><span>Artifact preview</span><button id="artifact-close">×</button></div>
+    <div class="artifact-head"><span>Artifact preview</span><button type="button" id="artifact-close">×</button></div>
     <iframe id="artifact-frame" sandbox="allow-scripts" title="Artifact"></iframe>
   </div>
 
@@ -130,6 +141,13 @@
         <label class="settings-row">Persona
           <select id="persona-picker"><option value="">Default</option></select>
         </label>
+        <label class="settings-row">Theme
+          <select id="theme-picker">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <button type="button" id="settings-save-chat" class="settings-section-save">Save chat settings</button>
       </details>
 
       <details class="settings-section">
@@ -147,6 +165,7 @@
         </div>
         <p class="settings-hint">Index text or PDF files for <b>@docs</b>. PDFs must not be password-protected.</p>
         <p class="settings-hint">Type <b>@</b> for files, <b>@codebase</b>, or <b>@docs</b>.</p>
+        <button type="button" id="settings-save-project" class="settings-section-save">Save project settings</button>
       </details>
 
       <details class="settings-section">
@@ -155,6 +174,7 @@
         <label class="settings-row"><input type="checkbox" id="mem-enabled" /> Include in prompts</label>
         <textarea id="mem-facts" placeholder="One fact per line"></textarea>
         <button type="button" id="mem-save">Save memory</button>
+        <button type="button" id="settings-save-memory" class="settings-section-save">Save section</button>
       </details>
 
       <details class="settings-section">
@@ -164,6 +184,7 @@
         <div class="pr-actions">
           <button type="button" id="pr-save">Save prompt</button>
         </div>
+        <button type="button" id="settings-save-prompts" class="settings-section-save">Save section</button>
       </details>
 
       <details class="settings-section">
@@ -173,6 +194,7 @@
         <label class="settings-row">Top P <input id="p-topp" type="number" step="0.05" min="0" max="1" placeholder="default" /></label>
         <label class="settings-row">Max tokens <input id="p-maxtok" type="number" step="1" min="1" placeholder="default" /></label>
         <button type="button" id="params-apply">Apply parameters</button>
+        <button type="button" id="settings-save-params" class="settings-section-save">Save section</button>
       </details>
 
       <details class="settings-section">
@@ -186,15 +208,59 @@
           <button type="button" id="skills-settings">Skill directories…</button>
         </div>
         <div id="skills-list" class="skills-list"></div>
+        <button type="button" id="settings-save-skills" class="settings-section-save">Save skills settings</button>
       </details>
 
-      <details class="settings-section">
+      <details class="settings-section" id="mcp-settings-section">
         <summary>MCP servers</summary>
-        <p class="settings-hint">MCP servers expose tools in <b>Agent</b> mode. Configure stdio or remote servers in VS Code settings.</p>
+        <p class="settings-hint">MCP servers expose tools in <b>Agent</b> mode. For hosted test servers, enter <b>Name + URL</b> and click Save server.</p>
+        <div class="mcp-form">
+          <label class="settings-row">Name
+            <input id="mcp-form-name" placeholder="mcp-echo-test" />
+          </label>
+          <label class="settings-row">Transport
+            <select id="mcp-form-transport">
+              <option value="">Auto</option>
+              <option value="stdio">stdio</option>
+              <option value="http">http</option>
+              <option value="sse">sse</option>
+            </select>
+          </label>
+          <label class="settings-row">Command (stdio)
+            <input id="mcp-form-command" placeholder="npx" />
+          </label>
+          <label class="settings-row">Args JSON array
+            <input id="mcp-form-args" placeholder='["-y","@modelcontextprotocol/server-filesystem","/path"]' />
+          </label>
+          <label class="settings-row">URL (http/sse)
+            <input id="mcp-form-url" placeholder="https://example.com/mcp" />
+          </label>
+          <label class="settings-row">SSE message URL (optional)
+            <input id="mcp-form-message-url" placeholder="https://example.com/mcp/messages" />
+          </label>
+          <label class="settings-row">Headers JSON object (optional)
+            <input id="mcp-form-headers" placeholder='{"Authorization":"Bearer YOUR_TOKEN"}' />
+          </label>
+          <label class="settings-row">Env JSON object
+            <input id="mcp-form-env" placeholder='{"MY_ENV":"value"}' />
+          </label>
+          <div class="settings-row-inline">
+            <button type="button" id="mcp-form-save">Save server</button>
+          </div>
+          <label class="settings-row">Paste MCP JSON
+            <textarea id="mcp-json-text" rows="5" placeholder='Paste either fortressChat.mcpServers array or {"servers": {...}} mcp.json'></textarea>
+          </label>
+          <div class="settings-row-inline">
+            <button type="button" id="mcp-import-text">Configure MCP server (paste JSON)</button>
+          </div>
+        </div>
         <div id="mcp-list" class="mcp-list"></div>
         <div class="settings-row-inline">
           <button type="button" id="mcp-tools-fetch">Fetch tool list</button>
+          <button type="button" id="mcp-tools-modal-open">View tool table</button>
           <button type="button" id="mcp-reload">Reload MCP</button>
+          <button type="button" id="mcp-import-file">Import mcp.json…</button>
+          <button type="button" id="mcp-import">Configure MCP server…</button>
           <button type="button" id="mcp-settings">MCP settings…</button>
         </div>
         <div class="mcp-tools-head">
@@ -202,6 +268,7 @@
           <input id="mcp-tools-search" type="text" placeholder="Search tools by name, server, or description" autocomplete="off" />
         </div>
         <div id="mcp-tools-list" class="mcp-tools-list"></div>
+        <button type="button" id="settings-save-mcp" class="settings-section-save">Save MCP settings</button>
       </details>
 
       <details class="settings-section">
@@ -210,6 +277,7 @@
         <input id="persona-name" placeholder="Persona name" />
         <textarea id="persona-prompt" placeholder="System prompt for this persona"></textarea>
         <button type="button" id="persona-save">Save persona</button>
+        <button type="button" id="settings-save-personas" class="settings-section-save">Save section</button>
       </details>
 
       <details class="settings-section" id="local-models-settings">
@@ -221,6 +289,7 @@
           <button type="button" id="models-dir-clear">Use default</button>
         </div>
         <p id="models-dir-status" class="settings-hint models-dir-status" hidden aria-live="polite"></p>
+        <button type="button" id="settings-save-local-models" class="settings-section-save">Save local model settings</button>
       </details>
 
       <details class="settings-section" id="google-gemini-settings" open>
@@ -231,6 +300,7 @@
           <button type="button" id="google-key-save">Save key</button>
         </div>
         <p id="google-key-status" class="settings-hint" hidden aria-live="polite"></p>
+        <button type="button" id="settings-save-google" class="settings-section-save">Save Google settings</button>
       </details>
 
       <details class="settings-section" hidden aria-hidden="true">
@@ -244,6 +314,7 @@
         <button type="button" id="attach-img" class="settings-block-btn">Attach image</button>
         <button type="button" id="speak-btn" class="settings-block-btn">Read last reply aloud</button>
         <button type="button" id="undo-agent" class="settings-block-btn" disabled>Undo last agent edits</button>
+        <button type="button" id="settings-save-more" class="settings-section-save">Save section</button>
       </details>
 
       <details class="settings-section" id="dev-settings" hidden aria-hidden="true">
@@ -253,6 +324,23 @@
     </div>
   </aside>
   <div id="settings-scrim" hidden></div>
+  <div id="settings-save-toast" hidden role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <div id="mcp-tools-modal" hidden role="dialog" aria-modal="true" aria-labelledby="mcp-tools-modal-title">
+    <div id="mcp-tools-modal-scrim"></div>
+    <div class="mcp-tools-modal-panel">
+      <div class="mcp-tools-modal-head">
+        <h2 id="mcp-tools-modal-title">MCP Tools</h2>
+        <button type="button" id="mcp-tools-modal-close" class="icon-btn" aria-label="Close MCP tools table">×</button>
+      </div>
+      <div class="mcp-tools-modal-body">
+        <p id="mcp-tools-modal-status" class="settings-hint">No MCP tools loaded</p>
+        <input id="mcp-tools-modal-search" type="text" placeholder="Search tool name, server, description" autocomplete="off" />
+        <div id="mcp-tools-modal-list" class="mcp-tools-modal-list"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="policy-fatal" hidden role="alertdialog" aria-modal="true" aria-labelledby="policy-fatal-title">
     <div class="policy-fatal-card">
       <h2 id="policy-fatal-title">Not allowed</h2>

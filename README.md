@@ -38,15 +38,32 @@ Run FortressChat as a normal macOS app window (Electron shell):
 
 ```bash
 npm install
-export FORTRESS_GOOGLE_CLIENT_ID="your-google-oauth-client-id.apps.googleusercontent.com"
+export FORTRESS_OIDC_CLIENT_ID="your-oidc-client-id"
+# preferred: single issuer URL (auto-discovers OIDC endpoints)
+export FORTRESS_OIDC_ISSUER="https://your-issuer.example.com"
+# optional for confidential clients (PingOne app with client authentication)
+export FORTRESS_OIDC_CLIENT_SECRET="your-oidc-client-secret"
+# optional overrides if your IdP needs explicit endpoint values
+export FORTRESS_OIDC_DEVICE_AUTHORIZATION_ENDPOINT="https://your-issuer.example.com/as/device_authorization"
+export FORTRESS_OIDC_TOKEN_ENDPOINT="https://your-issuer.example.com/as/token"
+export FORTRESS_OIDC_USERINFO_ENDPOINT="https://your-issuer.example.com/idp/userinfo.openid"
 npm run desktop:dev
 ```
 
 Standalone sign-in policy:
-- Google login is required.
-- Only `@pingidentity.com` Google accounts are allowed.
+
+- OIDC Device Authorization flow is required.
+- Only `@pingidentity.com` accounts are allowed.
+
+DEV-only fallback auth (local development only, never production):
+
+```bash
+export FORTRESS_DEV_AUTH_BYPASS=1
+export FORTRESS_DEV_AUTH_EMAIL="you@pingidentity.com" # optional
+```
 
 Optional macOS signing + notarization env vars:
+
 - `APPLE_ID`
 - `APPLE_APP_SPECIFIC_PASSWORD`
 - `APPLE_TEAM_ID`
@@ -61,6 +78,7 @@ npm run desktop:dist  # creates a DMG in packages/desktop/dist
 Note: this is a standalone preview shell. VS Code-specific integrations are not fully wired yet.
 
 Release prep docs:
+
 - `docs/releases/2026-07-24-v0.1.15.md`
 - `docs/releases/RELEASE-CHECKLIST.md`
 

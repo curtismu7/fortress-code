@@ -6,8 +6,40 @@
   --fc-text: var(--vscode-foreground, #ffffff);
   --fc-user-bg: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 18%, var(--fc-surface));
   --fc-accent: var(--vscode-focusBorder, #c96442);
+  --fc-control-bg: var(--vscode-button-background, #2d2d30);
+  --fc-control-fg: var(--vscode-button-foreground, #ffffff);
+  --fc-input-bg: var(--vscode-input-background, #1f1f1f);
+  --fc-input-fg: var(--fc-text);
   --fc-radius: 14px;
   --fc-max-width: 720px;
+}
+
+body.claude-ui[data-theme='dark'] {
+  --fc-bg: #111316;
+  --fc-surface: #1c2025;
+  --fc-border: rgba(255,255,255,.12);
+  --fc-muted: #aab4c0;
+  --fc-text: #f3f5f8;
+  --fc-user-bg: #253347;
+  --fc-accent: #4ea2ff;
+  --fc-control-bg: #2e4f77;
+  --fc-control-fg: #f7fbff;
+  --fc-input-bg: #181c21;
+  --fc-input-fg: #f3f5f8;
+}
+
+body.claude-ui[data-theme='light'] {
+  --fc-bg: #f6f8fc;
+  --fc-surface: #ffffff;
+  --fc-border: rgba(20, 35, 60, .16);
+  --fc-muted: #516078;
+  --fc-text: #172336;
+  --fc-user-bg: #e3ecfa;
+  --fc-accent: #245fb8;
+  --fc-control-bg: #245fb8;
+  --fc-control-fg: #ffffff;
+  --fc-input-bg: #ffffff;
+  --fc-input-fg: #172336;
 }
 
 body.claude-ui {
@@ -26,8 +58,8 @@ body.claude-ui {
 #top-bar, #messages-wrap, #composer, #compare-pane, #artifact-pane, #steps { margin-left: 260px; }
 
 button {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--fc-control-bg);
+  color: var(--fc-control-fg);
   border: none;
   padding: 6px 12px;
   border-radius: 8px;
@@ -36,8 +68,8 @@ button {
 }
 button:disabled { opacity: .45; cursor: default; }
 input, textarea, select {
-  background: var(--vscode-input-background);
-  color: inherit;
+  background: var(--fc-input-bg);
+  color: var(--fc-input-fg);
   border: 1px solid var(--fc-border);
   border-radius: 8px;
   padding: 6px 10px;
@@ -47,7 +79,7 @@ input, textarea, select {
 
 .icon-btn {
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--fc-text);
   border: 1px solid transparent;
   padding: 4px 8px;
   border-radius: 8px;
@@ -680,6 +712,132 @@ code.inl { background: var(--vscode-textCodeBlock-background, #2a2a2a); padding:
 }
 #settings-scrim[hidden] { display: none !important; }
 
+#mcp-tools-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#mcp-tools-modal[hidden] { display: none !important; }
+#mcp-tools-modal-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+}
+.mcp-tools-modal-panel {
+  position: relative;
+  width: min(980px, 100%);
+  max-height: min(82vh, 900px);
+  border-radius: 14px;
+  border: 1px solid var(--fc-border);
+  background: var(--fc-bg);
+  box-shadow: 0 20px 48px rgba(0,0,0,.35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mcp-tools-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--fc-border);
+}
+.mcp-tools-modal-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.mcp-tools-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  overflow: hidden;
+}
+#mcp-tools-modal-search {
+  width: 100%;
+}
+.mcp-tools-modal-list {
+  overflow: auto;
+  border-top: 1px solid var(--fc-border);
+  padding-top: 8px;
+}
+.mcp-tools-table-group {
+  border: 1px solid var(--fc-border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: var(--fc-surface);
+}
+.mcp-tools-table-head {
+  padding: 8px 10px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  background: color-mix(in srgb, var(--fc-bg) 65%, var(--fc-surface));
+  border-bottom: 1px solid var(--fc-border);
+}
+.mcp-tools-table-head strong {
+  font-size: 12px;
+  letter-spacing: .01em;
+}
+.mcp-tools-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mcp-tools-table th,
+.mcp-tools-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fc-border);
+}
+.mcp-tools-table thead th {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fc-muted);
+  background: color-mix(in srgb, var(--fc-bg) 72%, var(--fc-surface));
+}
+.mcp-tools-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.mcp-tools-table .mcp-tool-name-cell {
+  font-weight: 700;
+  word-break: break-all;
+}
+.mcp-tools-table .mcp-tool-desc-cell {
+  color: var(--fc-text);
+}
+.mcp-tools-table .mcp-tool-schema-cell {
+  color: var(--fc-muted);
+  white-space: nowrap;
+}
+.mcp-tools-table-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  #mcp-tools-modal {
+    padding: 12px;
+  }
+  .mcp-tools-modal-panel {
+    max-height: min(90vh, 900px);
+  }
+  .mcp-tools-table th,
+  .mcp-tools-table td {
+    padding: 7px 8px;
+  }
+}
+
 #settings-panel {
   position: fixed;
   top: 0;
@@ -722,6 +880,34 @@ code.inl { background: var(--vscode-textCodeBlock-background, #2a2a2a); padding:
 .settings-row-inline button { flex: 1 1 140px; min-width: 0; }
 #google-key-input { flex: 1 1 180px; min-width: 0; }
 .settings-hint { font-size: 11.5px; color: var(--fc-muted); margin: 6px 0; }
+.mcp-form {
+  border: 1px solid var(--fc-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fc-surface) 86%, var(--fc-bg));
+  padding: 10px;
+  margin: 0 0 10px;
+}
+.mcp-form .settings-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 4px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--fc-muted);
+}
+.mcp-form .settings-row input,
+.mcp-form .settings-row select {
+  width: 100%;
+}
+.mcp-form .settings-row textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
 #google-key-status {
   display: block;
   font-size: 14px;
@@ -831,6 +1017,31 @@ code.inl { background: var(--vscode-textCodeBlock-background, #2a2a2a); padding:
 #add-blocked { background: rgba(210,90,90,.12); border: 1px solid #6b2e2e; border-radius: 8px; padding: 8px; margin-top: 6px; font-size: 12px; }
 .dev-active { color: #e88; }
 .settings-block-btn { width: 100%; margin-bottom: 8px; }
+.settings-section-save {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--vscode-button-secondaryBackground, var(--fc-surface));
+  color: var(--vscode-button-secondaryForeground, var(--fc-text));
+  border: 1px solid var(--fc-border);
+}
+.settings-section-save:hover {
+  border-color: var(--fc-accent);
+}
+#settings-save-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 120;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(68, 170, 120, 0.5);
+  background: rgba(30, 40, 34, 0.96);
+  color: #c8f4dc;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
 #messages[hidden] { display: none !important; }
 
 /* ─── Sidebar (ChatGPT-style left rail) ─── */
@@ -900,6 +1111,41 @@ code.inl { background: var(--vscode-textCodeBlock-background, #2a2a2a); padding:
   color: var(--fc-text);
 }
 .sidebar-search input::placeholder { color: var(--fc-muted); }
+.sidebar-mcp {
+  margin: 0 12px 8px;
+  padding: 10px;
+  border: 1px solid var(--fc-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fc-surface) 88%, var(--fc-bg));
+  flex-shrink: 0;
+}
+.sidebar-mcp-title {
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--fc-muted);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.sidebar-mcp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sidebar-mcp-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--fc-border);
+  border-radius: 8px;
+  background: var(--fc-bg);
+  color: var(--fc-text);
+  padding: 7px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sidebar-mcp-btn:hover {
+  border-color: color-mix(in srgb, var(--fc-accent) 45%, var(--fc-border));
+}
 .chat-list {
   flex: 1;
   overflow-y: auto;

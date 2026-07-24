@@ -1,15 +1,18 @@
 export interface SavedPrompt { id: string; title: string; text: string }
 export interface Params { temperature?: number; top_p?: number; max_tokens?: number }
 export interface Persona { id: string; name: string; systemPrompt: string; modelId?: string; params?: Params }
+export type ThemeMode = 'dark' | 'light';
 export interface MementoLike { get(key: string): unknown; update(key: string, value: unknown): unknown }
 
 const PROMPTS_KEY = 'fortressChat.prompts';
 const PARAMS_KEY = 'fortressChat.params';
 const PERSONAS_KEY = 'fortressChat.personas';
+const THEME_KEY = 'fortressChat.theme';
 // Pre-rename keys (fortressCode → fortressChat). Used for one-time migration.
 const LEGACY_PROMPTS = 'fortressCode.prompts';
 const LEGACY_PARAMS = 'fortressCode.params';
 const LEGACY_PERSONAS = 'fortressCode.personas';
+const LEGACY_THEME = 'fortressCode.theme';
 
 const RANGES: Record<keyof Params, (v: number) => boolean> = {
   temperature: (v) => v >= 0 && v <= 2,
@@ -31,6 +34,7 @@ export class Prefs {
     migrate(state, LEGACY_PROMPTS, PROMPTS_KEY);
     migrate(state, LEGACY_PARAMS, PARAMS_KEY);
     migrate(state, LEGACY_PERSONAS, PERSONAS_KEY);
+    migrate(state, LEGACY_THEME, THEME_KEY);
   }
 
   prompts(): SavedPrompt[] {
@@ -77,5 +81,15 @@ export class Prefs {
   }
   deletePersona(id: string): void {
     void this.state.update(PERSONAS_KEY, this.personas().filter((x) => x.id !== id));
+  }
+
+  theme(): ThemeMode {
+    const raw = this.state.get(THEME_KEY);
+    return raw === 'light' ? 'light' : 'dark';
+  }
+
+  setTheme(mode: unknown): void {
+    const next: ThemeMode = mode === 'light' ? 'light' : 'dark';
+    void this.state.update(THEME_KEY, next);
   }
 }

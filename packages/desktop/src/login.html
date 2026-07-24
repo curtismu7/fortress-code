@@ -94,12 +94,12 @@
   <body>
     <main class="card">
       <h1>Sign in to FortressChat</h1>
-      <p class="lead">Google sign-in is required for this desktop app.</p>
-      <p class="rule">Only <strong>@pingidentity.com</strong> Google accounts are allowed.</p>
+      <p class="lead">Browser-based sign-in is required for this desktop app.</p>
+      <p class="rule">Only <strong>@pingidentity.com</strong> accounts are allowed.</p>
 
-      <button id="signInBtn" type="button">Continue with Google</button>
+      <button id="signInBtn" type="button">Continue in Browser</button>
       <p id="status" class="status"></p>
-      <p class="hint">Your browser opens for Google authentication and returns to this app.</p>
+      <p class="hint">Your browser opens to authenticate. Come back here after approval.</p>
     </main>
 
     <script>
@@ -133,7 +133,7 @@
         try {
           await window.fortressAuth.beginLogin();
         } catch (err) {
-          setStatus(err && err.message ? err.message : 'Could not start sign-in.', 'error');
+          setStatus(err?.message ? err.message : 'Could not start sign-in.', 'error');
           signInBtn.disabled = false;
         }
       });

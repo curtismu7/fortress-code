@@ -11,6 +11,15 @@ let streaming = '';
 let provider = 'local';
 let policy = { local: [], hidden: [], google: [], openrouter: [] };
 let selectedId = null;
+let settingsSaveToastTimer = null;
+let currentThemeMode = 'dark';
+
+function applyTheme(mode) {
+  const next = mode === 'light' ? 'light' : 'dark';
+  currentThemeMode = next;
+  if (document.body) document.body.setAttribute('data-theme', next);
+}
+applyTheme(currentThemeMode);
 
 /** Cloud models listed in the picker (Google always visible; OpenRouter when key set). */
 function listedCloudModels() {
@@ -141,6 +150,18 @@ function showModelsDirStatus(message) {
   statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
+function showSettingsSavedToast(message) {
+  const toast = $('settings-save-toast');
+  const text = (message || '').trim();
+  if (!toast || !text) return;
+  toast.textContent = text;
+  toast.hidden = false;
+  if (settingsSaveToastTimer) clearTimeout(settingsSaveToastTimer);
+  settingsSaveToastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 1500);
+}
+
 function openModelPicker() {
   closeSettings(false);
   const p = $('model-picker');
@@ -158,6 +179,16 @@ let actionMenuOpen = false;
 let mcpServers = [];
 let mcpTools = [];
 let mcpToolsFetchedAt = null;
+let openMcpModalOnNextTools = false;
+
+function filteredMcpTools(query) {
+  const q = String(query || '').trim().toLowerCase();
+  return (mcpTools || []).filter((t) => {
+    if (!q) return true;
+    const hay = `${t.name || ''}\n${t.server || ''}\n${t.description || ''}`.toLowerCase();
+    return hay.includes(q);
+  });
+}
 
 const ACTION_MODES = [
   { id: 'agent', label: 'Agent', icon: '⚡' },
@@ -370,8 +401,14 @@ function renderActionSub(body, q) {
     const reload = actionRow({ label: 'Reload MCP servers', icon: '↻' }, false, false);
     reload.onclick = () => { vscode.postMessage({ type: 'reloadMcp' }); closeActionMenu(); };
     body.appendChild(reload);
+    const imp = actionRow({ label: 'Configure MCP server…', icon: '⇪' }, false, false);
+    imp.onclick = () => { openMcpJsonPastePanel(); closeActionMenu(); };
+    body.appendChild(imp);
+    const impFile = actionRow({ label: 'Import .vscode/mcp.json…', icon: '🗁' }, false, false);
+    impFile.onclick = () => { vscode.postMessage({ type: 'importMcpJsonFile' }); closeActionMenu(); };
+    body.appendChild(impFile);
     const cfg = actionRow({ label: 'Configure MCP servers…', icon: '⚙' }, false, true);
-    cfg.onclick = () => { vscode.postMessage({ type: 'openMcpSettings' }); closeActionMenu(); };
+    cfg.onclick = () => { openMcpSettingsPanel(); closeActionMenu(); };
     body.appendChild(cfg);
     return;
   }
@@ -518,6 +555,112 @@ function updateComposerStatus() {
   el.classList.toggle('active', active);
 }
 
+function importMcpJsonFromPrompt() {
+  const text = window.prompt('Paste MCP JSON (.vscode/mcp.json or fortressChat.mcpServers array):');
+  if (!text || !text.trim()) return;
+  vscode.postMessage({ type: 'importMcpJson', text });
+}
+
+function openMcpJsonPastePanel() {
+  openMcpSettingsPanel();
+  const box = $('mcp-json-text');
+  if (box) {
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  }
+}
+
+function importMcpJsonFromTextarea() {
+  const box = $('mcp-json-text');
+  const raw = (box?.value || '').trim();
+  if (!raw) {
+    window.alert('Paste MCP JSON first.');
+    openMcpJsonPastePanel();
+    return;
+  }
+  vscode.postMessage({ type: 'importMcpJson', text: raw });
+}
+
+function parseJsonInput(text, fallback) {
+  const raw = String(text || '').trim();
+  if (!raw) return fallback;
+  return JSON.parse(raw);
+}
+
+function saveMcpFormServer() {
+  const name = ($('mcp-form-name')?.value || '').trim();
+  const transportRaw = ($('mcp-form-transport')?.value || '').trim();
+  const command = ($('mcp-form-command')?.value || '').trim();
+  const url = ($('mcp-form-url')?.value || '').trim();
+  const messageUrl = ($('mcp-form-message-url')?.value || '').trim();
+  if (!name) {
+    window.alert('MCP server name is required.');
+    return false;
+  }
+  if (!command && !url) {
+    window.alert('Provide either Command (stdio) or URL (http/sse).');
+    return false;
+  }
+  let args;
+  let env;
+  let headers;
+  try {
+    args = parseJsonInput(($('mcp-form-args')?.value || ''), undefined);
+    if (args !== undefined && !Array.isArray(args)) throw new Error('Args must be a JSON array.');
+    env = parseJsonInput(($('mcp-form-env')?.value || ''), undefined);
+    if (env !== undefined && (typeof env !== 'object' || Array.isArray(env))) throw new Error('Env must be a JSON object.');
+    headers = parseJsonInput(($('mcp-form-headers')?.value || ''), undefined);
+    if (headers !== undefined && (typeof headers !== 'object' || Array.isArray(headers))) throw new Error('Headers must be a JSON object.');
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+    return false;
+  }
+  const payload = {
+    name,
+    transport: transportRaw || undefined,
+    command: command || undefined,
+    args,
+    env,
+    headers,
+    url: url || undefined,
+    messageUrl: messageUrl || undefined,
+  };
+  vscode.postMessage({ type: 'saveMcpServer', server: payload });
+  return true;
+}
+
+function openMcpSettingsPanel() {
+  openSettings(true);
+  const section = $('mcp-settings-section');
+  if (section) {
+    section.open = true;
+    section.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function clickIfPresent(id) {
+  const el = $(id);
+  if (el) el.click();
+}
+
+function saveChatSettingsSection() {
+  const agentToggle = $('agent-toggle');
+  if (agentToggle) vscode.postMessage({ type: 'agentToggle', on: !!agentToggle.checked });
+  const comparePicker = $('compare-picker');
+  if (comparePicker) vscode.postMessage({ type: 'setCompareModel', id: comparePicker.value || null });
+  const personaPicker = $('persona-picker');
+  if (personaPicker) vscode.postMessage({ type: 'setPersona', id: personaPicker.value || null });
+  const themePicker = $('theme-picker');
+  if (themePicker) vscode.postMessage({ type: 'setTheme', mode: themePicker.value || 'dark' });
+  const chatPicker = $('chat-picker');
+  if (chatPicker?.value) vscode.postMessage({ type: 'switchChat', id: chatPicker.value });
+}
+
+function saveSkillsSettingsSection() {
+  const skillPicker = $('skill-picker');
+  if (skillPicker) vscode.postMessage({ type: 'setSkill', id: skillPicker.value || null });
+}
+
 function setGenerating(active) {
   window.__generating = !!active;
   const cancel = $('cancel');
@@ -574,9 +717,14 @@ function enhanceRich(container) {
       scrollChatToBottom();
     }
     if (!window.mermaid) return;
-    if (!window.__mermaidInit) {
-      window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark' });
+    if (!window.__mermaidInit || window.__mermaidTheme !== currentThemeMode) {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: currentThemeMode === 'light' ? 'default' : 'dark',
+      });
       window.__mermaidInit = true;
+      window.__mermaidTheme = currentThemeMode;
     }
     container.querySelectorAll('pre code').forEach((code) => {
       if (code.dataset.mermaidDone) return;
@@ -730,7 +878,8 @@ function renderState(status) {
   const loading = !!m && m.provider === 'local' && (status.state === 'starting' || status.state === 'loading-model');
   const ready = !!m && (isCloudProvider(m) ? true : status.state === 'ready');
   const engineReady = status.binaryInstalled || window.__googleKeySet || window.__orKeySet;
-  const showComposer = !!m && engineReady;
+  // Keep composer tools (action menu, MCP shortcuts) available regardless of model/engine state.
+  const showComposer = true;
   $('composer').hidden = !showComposer;
   const empty = $('empty-state');
   if (empty) empty.hidden = showComposer && (ready || loading) && !window.__folderHint;
@@ -854,8 +1003,9 @@ window.addEventListener('message', (e) => {
   if (m.type === 'usage' && m.usage) { const u = $('usage-last'); if (u) u.textContent = `↑${m.usage.promptTokens} ↓${m.usage.completionTokens} tok`; }
   if (m.type === 'chats') { window.__lastChats = m; renderChatPicker(m.metas, m.activeId); renderSidebar(m.metas, m.activeId); fillPersonaPicker(); fillSkillPicker(); }
   if (m.type === 'prefs') {
-    window.__prefs = { prompts: m.prompts || [], params: m.params || {} };
+    window.__prefs = { prompts: m.prompts || [], params: m.params || {}, theme: m.theme || 'dark' };
     fillParams(); renderPrompts(); fillComparePicker();
+    fillThemePicker();
     if (actionMenuOpen && actionSub === 'skills') renderActionMenu();
   }
   if (m.type === 'memory') {
@@ -880,6 +1030,11 @@ window.addEventListener('message', (e) => {
     mcpTools = m.tools || [];
     mcpToolsFetchedAt = Date.now();
     renderMcpToolsList();
+    renderMcpToolsModalTable();
+    if (openMcpModalOnNextTools) {
+      openMcpToolsModal();
+      openMcpModalOnNextTools = false;
+    }
   }
   if (m.type === 'openActionSub') openActionMenu(m.sub);
   if (m.type === 'projectRules') {
@@ -1266,6 +1421,14 @@ function fillParams() {
   const mt = $('p-maxtok'); if (mt) mt.value = params.max_tokens != null ? String(params.max_tokens) : '';
 }
 
+function fillThemePicker() {
+  const pick = $('theme-picker');
+  if (!pick) return;
+  const mode = window.__prefs?.theme === 'light' ? 'light' : 'dark';
+  pick.value = mode;
+  applyTheme(mode);
+}
+
 function promptLabel(p) {
   const line = (p.text || p.title || '').trim().split('\n')[0];
   if (!line) return 'Prompt';
@@ -1370,16 +1533,97 @@ function mcpUpdatedLabel() {
   }
 }
 
+function shortMcpToolName(toolName, server) {
+  const full = String(toolName || '');
+  const prefix = `${String(server || '')}__`;
+  return full.startsWith(prefix) ? full.slice(prefix.length) : full;
+}
+
+function renderMcpToolsModalTable() {
+  const box = $('mcp-tools-modal-list');
+  const status = $('mcp-tools-modal-status');
+  if (!box) return;
+
+  const modalSearch = $('mcp-tools-modal-search');
+  const q = (modalSearch?.value || '').trim().toLowerCase();
+  const tools = filteredMcpTools(q);
+  const total = (mcpTools || []).length;
+  if (status) {
+    status.textContent = q
+      ? `${tools.length} of ${total} MCP tool${total === 1 ? '' : 's'} · ${mcpUpdatedLabel()}`
+      : `${total} MCP tool${total === 1 ? '' : 's'} loaded · ${mcpUpdatedLabel()}`;
+  }
+
+  if (!tools.length) {
+    box.innerHTML = '<p class="settings-hint">No matching MCP tools. Fetch tool list and try again.</p>';
+    return;
+  }
+
+  const byServer = new Map();
+  tools.forEach((t) => {
+    const key = t.server || 'unknown';
+    const arr = byServer.get(key) || [];
+    arr.push(t);
+    byServer.set(key, arr);
+  });
+
+  const sections = Array.from(byServer.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([server, list]) => {
+      const rows = list
+        .slice()
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+        .map((t) => {
+          const displayName = shortMcpToolName(t.name, server) || '(unnamed)';
+          const desc = t.description ? esc(t.description) : 'No description';
+          const schema = esc(toolSchemaSummary(t.inputSchema));
+          const actions = t.displayOnly
+            ? '<span class="settings-hint">display only</span>'
+            : `<div class="mcp-tools-table-actions"><button type="button" class="mcp-tool-btn" data-mcp-action="use" data-tool-name="${esc(t.name)}">Use tool</button><button type="button" class="mcp-tool-btn" data-mcp-action="copy" data-tool-name="${esc(t.name)}">Copy args</button></div>`;
+          return '<tr>'
+            + `<td class="mcp-tool-name-cell">${esc(displayName)}</td>`
+            + `<td class="mcp-tool-desc-cell">${desc}</td>`
+            + `<td class="mcp-tool-schema-cell">${schema}</td>`
+            + `<td>${actions}</td>`
+            + '</tr>';
+        })
+        .join('');
+      return `<section class="mcp-tools-table-group"><div class="mcp-tools-table-head"><strong>${esc(server)}</strong><span class="settings-hint">${list.length} tool${list.length === 1 ? '' : 's'}</span></div><table class="mcp-tools-table"><thead><tr><th>Tool</th><th>Description</th><th>Input schema</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+    });
+
+  box.innerHTML = sections.join('');
+}
+
+function openMcpToolsModal() {
+  const modal = $('mcp-tools-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  const modalSearch = $('mcp-tools-modal-search');
+  const settingsSearch = $('mcp-tools-search');
+  if (modalSearch && settingsSearch && !modalSearch.value) modalSearch.value = settingsSearch.value || '';
+  renderMcpToolsModalTable();
+  if (modalSearch) modalSearch.focus();
+}
+
+function requestMcpToolsAndShow() {
+  openMcpModalOnNextTools = true;
+  openMcpToolsModal();
+  vscode.postMessage({ type: 'fetchMcpTools' });
+}
+
+function closeMcpToolsModal() {
+  const modal = $('mcp-tools-modal');
+  if (!modal) return;
+  modal.hidden = true;
+}
+
 function renderMcpToolsList() {
   const box = $('mcp-tools-list'); if (!box) return;
   const countEl = $('mcp-tools-count');
-  const q = (($('mcp-tools-search') && $('mcp-tools-search').value) || '').trim().toLowerCase();
+  const toolsSearch = $('mcp-tools-search');
+  const q = (toolsSearch?.value || '').trim().toLowerCase();
 
-  const tools = (mcpTools || []).filter((t) => {
-    if (!q) return true;
-    const hay = `${t.name || ''}\n${t.server || ''}\n${t.description || ''}`.toLowerCase();
-    return hay.includes(q);
-  });
+  const tools = filteredMcpTools(q);
 
   if (countEl) {
     const total = (mcpTools || []).length;
@@ -1407,16 +1651,41 @@ function renderMcpToolsList() {
       .slice()
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
       .map((t) => {
-        const shortName = String(t.name || '').replace(`${server}__`, '');
+        const shortName = shortMcpToolName(t.name, server);
         const schemaPretty = esc(JSON.stringify(t.inputSchema || {}, null, 2));
         const argsJson = esc(JSON.stringify(argsTemplate(t.inputSchema), null, 2));
         const desc = t.description ? `<div class="mcp-tool-desc">${esc(t.description)}</div>` : '';
-        return `<details class="mcp-tool-item"><summary><span class="mcp-tool-name">${esc(shortName || t.name || '(unnamed)')}</span><span class="mcp-tool-meta">${esc(toolSchemaSummary(t.inputSchema))}</span></summary>${desc}<div class="mcp-tool-actions"><button type="button" class="mcp-tool-btn" data-mcp-action="use" data-tool-name="${esc(t.name)}">Use tool</button><button type="button" class="mcp-tool-btn" data-mcp-action="copy" data-tool-name="${esc(t.name)}">Copy args JSON</button></div><pre class="mcp-tool-schema">${schemaPretty}</pre><pre class="mcp-tool-schema">${argsJson}</pre></details>`;
+        const actions = t.displayOnly
+          ? '<div class="mcp-tool-actions"><span class="settings-hint">Display-only MCP capability</span></div>'
+          : `<div class="mcp-tool-actions"><button type="button" class="mcp-tool-btn" data-mcp-action="use" data-tool-name="${esc(t.name)}">Use tool</button><button type="button" class="mcp-tool-btn" data-mcp-action="copy" data-tool-name="${esc(t.name)}">Copy args JSON</button></div>`;
+        return `<details class="mcp-tool-item"><summary><span class="mcp-tool-name">${esc(shortName || t.name || '(unnamed)')}</span><span class="mcp-tool-meta">${esc(toolSchemaSummary(t.inputSchema))}</span></summary>${desc}${actions}<pre class="mcp-tool-schema">${schemaPretty}</pre><pre class="mcp-tool-schema">${argsJson}</pre></details>`;
       }).join('');
     blocks.push(`<section class="mcp-tool-group"><div class="mcp-tool-group-head"><span class="mcp-tool-server">${esc(server)}</span><span class="settings-hint">${list.length} tool${list.length === 1 ? '' : 's'}</span></div>${items}</section>`);
   });
 
   box.innerHTML = blocks.join('');
+}
+
+function runMcpToolAction(action, toolName) {
+  if (!toolName) return;
+  const tool = (mcpTools || []).find((t) => String(t.name || '') === toolName);
+  if (tool?.displayOnly) return;
+  const args = JSON.stringify(argsTemplate(tool?.inputSchema), null, 2);
+  if (action === 'use') {
+    const input = $('input');
+    if (!input) return;
+    const text = `Use MCP tool ${toolName} with arguments:\n${args}`;
+    input.value = input.value ? `${input.value}\n\n${text}` : text;
+    resizeInput();
+    updateMeter();
+    input.focus();
+    closeMcpToolsModal();
+    closeSettings(false);
+    return;
+  }
+  if (action === 'copy') {
+    vscode.postMessage({ type: 'copyText', text: args });
+  }
 }
 
 function renderPersonas() {
@@ -1594,6 +1863,11 @@ document.addEventListener('click', (e) => {
   closeChatMenu();
 });
 document.addEventListener('keydown', (e) => {
+  const modal = $('mcp-tools-modal');
+  if (modal && !modal.hidden && e.key === 'Escape') {
+    closeMcpToolsModal();
+    return;
+  }
   const menu = $('chat-actions-menu');
   if (!menu || menu.hidden) return;
   if (e.key === 'Escape') { closeChatMenu(); return; }
@@ -1692,39 +1966,68 @@ $('banner-close').onclick = () => { $('banner').hidden = true; };
 { const _ro = $('rules-open'); if (_ro) _ro.onclick = () => vscode.postMessage({ type: 'openRulesFile' }); }
 { const _ua = $('undo-agent'); if (_ua) _ua.onclick = () => vscode.postMessage({ type: 'undoAgentRun' }); }
 { const _pp = $('persona-picker'); if (_pp) _pp.onchange = () => vscode.postMessage({ type: 'setPersona', id: _pp.value || null }); }
+{ const _tp = $('theme-picker'); if (_tp) _tp.onchange = () => applyTheme(_tp.value); }
 { const _sp = $('skill-picker'); if (_sp) _sp.onchange = () => vscode.postMessage({ type: 'setSkill', id: _sp.value || null }); }
 { const _sr = $('skills-reload'); if (_sr) _sr.onclick = () => vscode.postMessage({ type: 'reloadSkills' }); }
 { const _ss = $('skills-settings'); if (_ss) _ss.onclick = () => vscode.postMessage({ type: 'openSkillSettings' }); }
-{ const _mt = $('mcp-tools-fetch'); if (_mt) _mt.onclick = () => vscode.postMessage({ type: 'fetchMcpTools' }); }
+{ const _mt = $('mcp-tools-fetch'); if (_mt) _mt.onclick = () => requestMcpToolsAndShow(); }
 { const _mts = $('mcp-tools-search'); if (_mts) _mts.oninput = () => renderMcpToolsList(); }
 {
   const _mtl = $('mcp-tools-list');
   if (_mtl) _mtl.onclick = (e) => {
-    const btn = e.target.closest && e.target.closest('[data-mcp-action]');
+    const btn = e.target.closest?.('[data-mcp-action]');
     if (!btn) return;
     const action = btn.getAttribute('data-mcp-action');
     const toolName = btn.getAttribute('data-tool-name') || '';
-    if (!toolName) return;
-    const tool = (mcpTools || []).find((t) => String(t.name || '') === toolName);
-    const args = JSON.stringify(argsTemplate(tool && tool.inputSchema), null, 2);
-    if (action === 'use') {
-      const input = $('input');
-      if (!input) return;
-      const text = `Use MCP tool ${toolName} with arguments:\n${args}`;
-      input.value = input.value ? `${input.value}\n\n${text}` : text;
-      resizeInput();
-      updateMeter();
-      input.focus();
-      closeSettings(false);
-      return;
-    }
-    if (action === 'copy') {
-      vscode.postMessage({ type: 'copyText', text: args });
-    }
+    runMcpToolAction(action, toolName);
   };
 }
+{
+  const _mtmo = $('mcp-tools-modal-open');
+  if (_mtmo) _mtmo.onclick = () => openMcpToolsModal();
+}
+{
+  const _smt = $('sidebar-mcp-tools');
+  if (_smt) _smt.onclick = () => openMcpToolsModal();
+}
+{
+  const _mtms = $('mcp-tools-modal-search');
+  if (_mtms) _mtms.oninput = () => renderMcpToolsModalTable();
+}
+{
+  const _mtml = $('mcp-tools-modal-list');
+  if (_mtml) _mtml.onclick = (e) => {
+    const btn = e.target.closest?.('[data-mcp-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-mcp-action');
+    const toolName = btn.getAttribute('data-tool-name') || '';
+    runMcpToolAction(action, toolName);
+  };
+}
+{ const _mtmc = $('mcp-tools-modal-close'); if (_mtmc) _mtmc.onclick = () => closeMcpToolsModal(); }
+{ const _mtms = $('mcp-tools-modal-scrim'); if (_mtms) _mtms.onclick = () => closeMcpToolsModal(); }
 { const _mr = $('mcp-reload'); if (_mr) _mr.onclick = () => vscode.postMessage({ type: 'reloadMcp' }); }
+{ const _mif = $('mcp-import-file'); if (_mif) _mif.onclick = () => vscode.postMessage({ type: 'importMcpJsonFile' }); }
+{ const _mi = $('mcp-import'); if (_mi) _mi.onclick = () => openMcpJsonPastePanel(); }
+{ const _mit = $('mcp-import-text'); if (_mit) _mit.onclick = () => importMcpJsonFromTextarea(); }
 { const _ms = $('mcp-settings'); if (_ms) _ms.onclick = () => vscode.postMessage({ type: 'openMcpSettings' }); }
+{ const _mfs = $('mcp-form-save'); if (_mfs) _mfs.onclick = () => { if (saveMcpFormServer()) showSettingsSavedToast('Saved MCP server settings.'); }; }
+{ const _smf = $('sidebar-mcp-fetch'); if (_smf) _smf.onclick = () => requestMcpToolsAndShow(); }
+{ const _smr = $('sidebar-mcp-reload'); if (_smr) _smr.onclick = () => vscode.postMessage({ type: 'reloadMcp' }); }
+{ const _smif = $('sidebar-mcp-import-file'); if (_smif) _smif.onclick = () => vscode.postMessage({ type: 'importMcpJsonFile' }); }
+{ const _smip = $('sidebar-mcp-import-paste'); if (_smip) _smip.onclick = () => openMcpJsonPastePanel(); }
+{ const _sms = $('sidebar-mcp-settings'); if (_sms) _sms.onclick = () => openMcpSettingsPanel(); }
+{ const _ssc = $('settings-save-chat'); if (_ssc) _ssc.onclick = () => { saveChatSettingsSection(); showSettingsSavedToast('Saved chat settings.'); }; }
+{ const _ssp = $('settings-save-project'); if (_ssp) _ssp.onclick = () => { clickIfPresent('rules-open'); showSettingsSavedToast('Saved project settings.'); }; }
+{ const _ssm = $('settings-save-memory'); if (_ssm) _ssm.onclick = () => { clickIfPresent('mem-save'); showSettingsSavedToast('Saved memory settings.'); }; }
+{ const _sspl = $('settings-save-prompts'); if (_sspl) _sspl.onclick = () => { clickIfPresent('pr-save'); showSettingsSavedToast('Saved prompt library settings.'); }; }
+{ const _sspa = $('settings-save-params'); if (_sspa) _sspa.onclick = () => { clickIfPresent('params-apply'); showSettingsSavedToast('Saved model parameters.'); }; }
+{ const _sssk = $('settings-save-skills'); if (_sssk) _sssk.onclick = () => { saveSkillsSettingsSection(); showSettingsSavedToast('Saved skills settings.'); }; }
+{ const _ssmcp = $('settings-save-mcp'); if (_ssmcp) _ssmcp.onclick = () => { if (saveMcpFormServer()) showSettingsSavedToast('Saved MCP settings.'); }; }
+{ const _ssper = $('settings-save-personas'); if (_ssper) _ssper.onclick = () => { clickIfPresent('persona-save'); showSettingsSavedToast('Saved persona settings.'); }; }
+{ const _sslm = $('settings-save-local-models'); if (_sslm) _sslm.onclick = () => { showModelsDirStatus('Local model folder updates immediately when you choose a folder.'); showSettingsSavedToast('Saved local model settings.'); }; }
+{ const _ssg = $('settings-save-google'); if (_ssg) _ssg.onclick = () => { clickIfPresent('google-key-save'); showSettingsSavedToast('Saved Google settings.'); }; }
+{ const _ssmore = $('settings-save-more'); if (_ssmore) _ssmore.onclick = () => { const banner = $('banner'); if (banner) { banner.classList.add('banner--hint'); banner.hidden = false; } const text = $('banner-text'); if (text) text.textContent = 'More actions apply immediately; no additional save required.'; showSettingsSavedToast('Saved section settings.'); }; }
 { const _psv = $('persona-save'); if (_psv) _psv.onclick = () => {
   const name = ($('persona-name')?.value || '').trim();
   const systemPrompt = ($('persona-prompt')?.value || '').trim();
