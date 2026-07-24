@@ -84,6 +84,8 @@ Release prep docs:
 
 **Full harness guide:** [`docs/DEV-HARNESS.md`](docs/DEV-HARNESS.md) — launch configs, hot reload, fixture sandbox, E2E, troubleshooting.
 
+Brave News cloud MCP setup: [`docs/BRAVE-CLOUD-MCP.md`](docs/BRAVE-CLOUD-MCP.md).
+
 ### Extension Development Host (VS Code or Cursor)
 
 1. Open this repo (any git worktree — `.vscode/launch.json` is committed).

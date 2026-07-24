@@ -5,6 +5,11 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "brave:mcp": "node dist/braveMcpWrapper.js",
+    "brave:mcp:cloud": "BRAVE_WRAPPER_HOST=0.0.0.0 BRAVE_WRAPPER_PORT=${PORT:-8080} node dist/braveMcpWrapper.js",
+    "brave:mcp:dev": "npm run build && npm run brave:mcp",
+    "brave:token": "node dist/mintBraveToken.js",
+    "brave:token:dev": "npm run build && npm run brave:token",
     "test": "vitest run"
   },
   "dependencies": {

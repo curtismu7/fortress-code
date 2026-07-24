@@ -1,0 +1,28 @@
+# Fly config for Brave News MCP wrapper (cloud)
+# 1) Set app name to your own unique Fly app
+# 2) Deploy with: flyctl deploy -c fly.brave-wrapper.toml
+
+app = "fortress-brave-wrapper"
+primary_region = "dfw"
+
+[env]
+  BRAVE_WRAPPER_HOST = "0.0.0.0"
+  BRAVE_WRAPPER_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[processes]
+  app = "npm run brave:mcp:cloud"
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "15s"
+  method = "GET"
+  path = "/healthz"
+  timeout = "5s"
