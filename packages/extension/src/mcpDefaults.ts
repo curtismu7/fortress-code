@@ -81,3 +81,58 @@ export function resolveMcpConfigs(userRaw: unknown, pingOneRaw?: unknown): McpSe
 
 /** Re-export for callers that only need parsed user entries. */
 export { parseMcpConfigs };
+
+function stringMap(input: unknown): Record<string, string> | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const entries = Object.entries(input as Record<string, unknown>)
+    .filter(([, v]) => typeof v === 'string')
+    .map(([k, v]) => [k, String(v)] as const);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+/**
+ * Parse imported MCP JSON from either fortressChat.mcpServers array format
+ * or VS Code .vscode/mcp.json object format ({ servers: { name: {...} } }).
+ */
+export function parseImportedMcpServersJson(rawText: string): McpServerConfig[] {
+  const parsed = JSON.parse(rawText) as unknown;
+
+  // FortressChat setting shape: [{ name, command|url, ... }]
+  if (Array.isArray(parsed)) {
+    return resolveMcpConfigs(parsed, { enabled: false }).filter((s) => !s.builtin);
+  }
+
+  // VS Code shape: { servers: { "name": { command, args, env, ... } } }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const root = parsed as Record<string, unknown>;
+    const servers = root.servers;
+    if (servers && typeof servers === 'object' && !Array.isArray(servers)) {
+      const rows: McpServerConfig[] = [];
+      for (const [name, value] of Object.entries(servers as Record<string, unknown>)) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+        const src = value as Record<string, unknown>;
+        const command = typeof src.command === 'string' && src.command.trim() ? src.command.trim() : undefined;
+        const url = typeof src.url === 'string' && src.url.trim() ? src.url.trim() : undefined;
+        const args = Array.isArray(src.args) ? src.args.filter((a): a is string => typeof a === 'string') : undefined;
+        const messageUrl = typeof src.messageUrl === 'string' && src.messageUrl.trim() ? src.messageUrl.trim() : undefined;
+        const transport = src.transport === 'stdio' || src.transport === 'http' || src.transport === 'sse'
+          ? src.transport
+          : undefined;
+        rows.push({
+          name,
+          transport,
+          command,
+          args,
+          env: stringMap(src.env),
+          url,
+          messageUrl,
+          headers: stringMap(src.headers),
+          disabled: src.disabled === true,
+        });
+      }
+      return resolveMcpConfigs(rows, { enabled: false }).filter((s) => !s.builtin);
+    }
+  }
+
+  throw new Error('Invalid MCP JSON. Expected an array or an object with a "servers" map.');
+}

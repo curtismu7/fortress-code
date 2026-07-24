@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { loadPolicy, chatLocalEntries, visibleLocalEntries, hiddenLocalEntries, googleEntries, explainBlock, formatPolicyFatal, type PolicyEntry, type StatusResponse } from '@fortress-chat/shared';
@@ -25,7 +26,7 @@ import { exportMarkdown } from '../exportChat';
 import { MemoryStore } from '../memory';
 import { DocsService } from '../docsService';
 import { McpClient } from '../mcpClient';
-import { resolveMcpConfigs } from '../mcpDefaults';
+import { parseImportedMcpServersJson, resolveMcpConfigs } from '../mcpDefaults';
 import { webSearch } from '../webSearch';
 import { speakText } from '../voice';
 import { loadProjectRules, defaultRulesRel } from '../projectRules';
@@ -342,12 +343,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private postMcpToolsTarget(emit?: (msg: unknown) => void): void {
-    const tools = this.mcpClients.flatMap((c) => c.listTools().map((t) => ({
-      server: c.serverName(),
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
-    })));
+    const tools = this.mcpClients.flatMap((c) => {
+      const server = c.serverName();
+      const callable = c.listTools().map((t) => ({
+        server,
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      }));
+      const resources = c.listResources().map((r) => ({
+        server,
+        name: `${server}__resource__${r.name || r.uri}`,
+        description: `${r.description || 'MCP resource'} (${r.uri})`,
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        displayOnly: true,
+      }));
+      const prompts = c.listPrompts().map((p) => ({
+        server,
+        name: `${server}__prompt__${p.name}`,
+        description: p.description || 'MCP prompt template',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        displayOnly: true,
+      }));
+      return [...callable, ...resources, ...prompts];
+    });
     const msg = { type: 'mcpTools', tools };
     if (emit) emit(msg);
     else this.post(msg);
@@ -414,6 +433,45 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     this.postMcpStatus();
     this.postMcpTools();
+
+    const totalTools = this.mcpClients.reduce((n, c) => n + c.toolCount(), 0);
+    if (totalTools === 0) {
+      const webPageErr = this.mcpClients
+        .map((c) => c.error() || '')
+        .find((e) => e.toLowerCase().includes('web page') || e.toLowerCase().includes('mcp test client'));
+      if (webPageErr) {
+        if (webPageErr.toLowerCase().includes('mcpplaygroundonline') || webPageErr.toLowerCase().includes('mcp-test-client')) {
+          this.hint('No tools loaded: /mcp-test-client is a web UI, not an MCP endpoint. Try one of these URLs: https://mcpplaygroundonline.com/mcp-echo-server, https://mcpplaygroundonline.com/mcp-auth-server, https://mcpplaygroundonline.com/mcp-complex-schema-server, https://mcpplaygroundonline.com/mcp-apps-server');
+        } else {
+          this.hint('No tools loaded: the URL points to a web page/test client, not an MCP server endpoint. Use the server endpoint URL from that site.');
+        }
+      }
+    }
+  }
+
+  private currentUserMcpServers(): Record<string, unknown>[] {
+    const cfg = vscode.workspace.getConfiguration('fortressChat');
+    const raw = cfg.get('mcpServers');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row));
+  }
+
+  private async upsertMcpServers(entries: Record<string, unknown>[]): Promise<number> {
+    const byName = new Map<string, Record<string, unknown>>();
+    for (const row of this.currentUserMcpServers()) {
+      const name = typeof row.name === 'string' ? row.name.trim() : '';
+      if (name) byName.set(name, row);
+    }
+    for (const row of entries) {
+      const name = typeof row.name === 'string' ? row.name.trim() : '';
+      if (!name) continue;
+      byName.set(name, row);
+    }
+    const merged = [...byName.values()];
+    const cfg = vscode.workspace.getConfiguration('fortressChat');
+    await cfg.update('mcpServers', merged, vscode.ConfigurationTarget.Workspace);
+    await this.initMcp();
+    return entries.length;
   }
 
   private async init(): Promise<void> {
@@ -455,7 +513,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async pushFullState(target?: vscode.Webview): Promise<void> {
     const emit = (msg: unknown) => this.deliver(msg, target);
     emit({ type: 'policy', local: visibleLocalEntries(), hidden: hiddenLocalEntries(), google: googleEntries(), openrouter: [] });
-    emit({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() });
+    emit({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), theme: this.prefs.theme() });
     emit({ type: 'personas', personas: this.prefs.personas() });
     emit({ type: 'skills', skills: this.skills });
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -843,6 +901,94 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'fetchMcpTools':
           await this.initMcp();
           return;
+        case 'importMcpJson': {
+          const raw = String(m.text ?? '').trim();
+          if (!raw) {
+            this.banner('No MCP JSON provided.');
+            return;
+          }
+          try {
+            const imported = parseImportedMcpServersJson(raw);
+            if (!imported.length) {
+              this.banner('No valid MCP servers found in JSON.');
+              return;
+            }
+            await this.upsertMcpServers(imported as unknown as Record<string, unknown>[]);
+            this.hint(`Imported ${imported.length} MCP server${imported.length === 1 ? '' : 's'}.`);
+          } catch (e) {
+            this.banner(`Could not import MCP JSON: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          return;
+        }
+        case 'importMcpJsonFile': {
+          const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+          const defaultUri = root ? vscode.Uri.joinPath(root, '.vscode', 'mcp.json') : undefined;
+          const picks = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            filters: { JSON: ['json'] },
+            defaultUri,
+            title: 'Import MCP JSON file',
+            openLabel: 'Import MCP JSON',
+          });
+          const file = picks?.[0];
+          if (!file) return;
+          try {
+            const raw = await readFile(file.fsPath, 'utf8');
+            const imported = parseImportedMcpServersJson(raw);
+            if (!imported.length) {
+              this.banner('No valid MCP servers found in selected file.');
+              return;
+            }
+            await this.upsertMcpServers(imported as unknown as Record<string, unknown>[]);
+            this.hint(`Imported ${imported.length} MCP server${imported.length === 1 ? '' : 's'} from ${file.path.split('/').pop() || 'file'}.`);
+          } catch (e) {
+            this.banner(`Could not import MCP JSON file: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          return;
+        }
+        case 'saveMcpServer': {
+          const row = (m.server && typeof m.server === 'object') ? (m.server as Record<string, unknown>) : null;
+          const name = row && typeof row.name === 'string' ? row.name.trim() : '';
+          const command = row && typeof row.command === 'string' ? row.command.trim() : '';
+          const url = row && typeof row.url === 'string' ? row.url.trim() : '';
+          if (!name) {
+            this.banner('MCP server name is required.');
+            return;
+          }
+          if (!command && !url) {
+            this.banner('Provide an MCP command or URL.');
+            return;
+          }
+          const args = row && Array.isArray(row.args)
+            ? row.args.filter((a): a is string => typeof a === 'string')
+            : undefined;
+          const env = row?.env && typeof row.env === 'object' && !Array.isArray(row.env)
+            ? Object.fromEntries(Object.entries(row.env).filter(([, v]) => typeof v === 'string'))
+            : undefined;
+          const headers = row?.headers && typeof row.headers === 'object' && !Array.isArray(row.headers)
+            ? Object.fromEntries(Object.entries(row.headers).filter(([, v]) => typeof v === 'string'))
+            : undefined;
+          const transport = row && (row.transport === 'stdio' || row.transport === 'http' || row.transport === 'sse')
+            ? row.transport
+            : undefined;
+          const messageUrl = row && typeof row.messageUrl === 'string' ? row.messageUrl.trim() : '';
+
+          const clean: Record<string, unknown> = {
+            name,
+            transport,
+            command: command || undefined,
+            args: args?.length ? args : undefined,
+            env: env && Object.keys(env).length ? env : undefined,
+            url: url || undefined,
+            headers: headers && Object.keys(headers).length ? headers : undefined,
+            messageUrl: messageUrl || undefined,
+          };
+          await this.upsertMcpServers([clean]);
+          this.hint(`Saved MCP server "${name}".`);
+          return;
+        }
         case 'copyText': {
           const text = String(m.text ?? '');
           if (!text.trim()) return;
@@ -985,9 +1131,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
           return;
         }
-        case 'savePrompt': this.prefs.savePrompt(m.prompt); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() }); return;
-        case 'deletePrompt': this.prefs.deletePrompt(String(m.id)); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() }); return;
-        case 'setParams': this.prefs.setParams(m.params ?? {}); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params() }); return;
+        case 'savePrompt': this.prefs.savePrompt(m.prompt); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), theme: this.prefs.theme() }); return;
+        case 'deletePrompt': this.prefs.deletePrompt(String(m.id)); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), theme: this.prefs.theme() }); return;
+        case 'setParams': this.prefs.setParams(m.params ?? {}); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), theme: this.prefs.theme() }); return;
+        case 'setTheme': this.prefs.setTheme(m.mode); this.post({ type: 'prefs', prompts: this.prefs.prompts(), params: this.prefs.params(), theme: this.prefs.theme() }); return;
         case 'forkChat': this.generating?.abort(); this.store.fork(Number(m.index)); this.post({ type: 'history', messages: this.store.active().messages }); this.postChats(); return;
         case 'searchChats': this.post({ type: 'searchResults', metas: searchChats(String(m.query ?? ''), this.store.metas(), this.store.messagesById(), m.folder ? String(m.folder) : undefined) }); return;
         case 'setFolder': this.store.setFolder(this.store.activeId, m.folder ? String(m.folder) : undefined); this.post({ type: 'folders', folders: this.store.listFolders() }); this.postChats(); return;
@@ -1096,8 +1243,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (!this.client) this.client = await this.connect();
       try {
         const r = await this.client.start(entry.local!.catalogId);
-        if (!r.ok) this.post({ type: 'startRejected', rejection: r.rejection, modelId: id });
+        if (!r.ok) {
+          this.selected = null;
+          this.post({ type: 'startRejected', rejection: r.rejection, modelId: id });
+        }
       } catch (e) {
+        this.selected = null;
         const msg = String(e);
         if (msg.includes('428')) this.banner('This model needs to be downloaded first — click it to download.');
         else this.banner(msg);
@@ -1166,7 +1317,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return resolveDevTarget(this.devModel, key ?? '');
     }
     if (this.selected) {
-      if (this.selected.provider === 'local' && !this.client) this.client = await this.connect();
+      if (this.selected.provider === 'local') {
+        if (!this.client) this.client = await this.connect();
+        const selectedLocal = this.selected.local?.catalogId;
+        const pre = this.client ? await this.client.status().catch(() => null) : null;
+        const matchesSelected = pre?.modelId && selectedLocal ? pre.modelId === selectedLocal : false;
+        if (!pre?.endpoint || !matchesSelected) {
+          if (!selectedLocal) throw new Error('Selected local model is missing catalog metadata. Pick the model again.');
+          const started = await this.client.start(selectedLocal);
+          if (!started.ok) {
+            this.selected = null;
+            if (started.rejection.reason === 'insufficient-memory') {
+              throw new Error('Unable to start the selected local model due to insufficient memory.');
+            }
+            throw new Error('Unable to start the selected local model.');
+          }
+          await this.pushStatus();
+        }
+      }
       return resolveTarget(this.selected, await this.targetDeps());
     }
     throw new Error('Pick a model first.');

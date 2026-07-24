@@ -16,11 +16,15 @@ export interface McpServerConfig {
   builtin?: boolean;
 }
 export interface McpTool { name: string; description: string; inputSchema: object }
+export interface McpResource { name: string; uri: string; description?: string }
+export interface McpPrompt { name: string; description?: string }
 
 type RpcError = { code?: number; message?: string; data?: unknown };
 type RpcMessage = { id?: number; method?: string; result?: unknown; error?: RpcError };
 type WireMode = 'framed' | 'newline';
 type ClientTransport = 'stdio' | 'http' | 'sse';
+
+const MCP_ACCEPT_HEADER = 'application/json, text/event-stream';
 
 /** Minimal MCP stdio client (tools/list + tools/call). */
 export class McpClient {
@@ -28,6 +32,8 @@ export class McpClient {
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private tools: McpTool[] = [];
+  private resources: McpResource[] = [];
+  private prompts: McpPrompt[] = [];
   private lastError: string | null = null;
   private recvBuffer = '';
   private wireMode: WireMode = 'framed';
@@ -82,12 +88,7 @@ export class McpClient {
     const handshakeTimeoutMs = 10_000;
     await this.initializeWithFallback(handshakeTimeoutMs);
     await this.notify('notifications/initialized', {});
-    const listed = await this.request('tools/list', {}, handshakeTimeoutMs) as { tools?: McpTool[] };
-    this.tools = (listed?.tools ?? []).map((t) => ({
-      name: `${this.cfg.name}__${t.name}`,
-      description: t.description ?? t.name,
-      inputSchema: (t as { inputSchema?: object }).inputSchema ?? { type: 'object', properties: {} },
-    }));
+    await this.refreshCapabilities(handshakeTimeoutMs);
     this.connected = true;
     return this.tools;
   }
@@ -110,13 +111,64 @@ export class McpClient {
     const handshakeTimeoutMs = mode === 'framed' ? 4_000 : 10_000;
     await this.initializeWithFallback(handshakeTimeoutMs);
     await this.notify('notifications/initialized', {});
-    const listed = await this.request('tools/list', {}, handshakeTimeoutMs) as { tools?: McpTool[] };
-    this.tools = (listed?.tools ?? []).map((t) => ({
-      name: `${this.cfg.name}__${t.name}`,
-      description: t.description ?? t.name,
-      inputSchema: (t as { inputSchema?: object }).inputSchema ?? { type: 'object', properties: {} },
-    }));
+    await this.refreshCapabilities(handshakeTimeoutMs);
     this.connected = true;
+  }
+
+  private async refreshCapabilities(timeoutMs: number): Promise<void> {
+    this.tools = await this.fetchTools(timeoutMs);
+    this.resources = await this.fetchResources(timeoutMs);
+    this.prompts = await this.fetchPrompts(timeoutMs);
+  }
+
+  private async fetchTools(timeoutMs: number): Promise<McpTool[]> {
+    try {
+      const listed = await this.request('tools/list', {}, timeoutMs) as { tools?: McpTool[] };
+      return (listed?.tools ?? []).map((t) => ({
+        name: `${this.cfg.name}__${t.name}`,
+        description: t.description ?? t.name,
+        inputSchema: (t as { inputSchema?: object }).inputSchema ?? { type: 'object', properties: {} },
+      }));
+    } catch (e) {
+      if (this.isMethodNotFoundError(e)) return [];
+      throw e;
+    }
+  }
+
+  private async fetchResources(timeoutMs: number): Promise<McpResource[]> {
+    try {
+      const listed = await this.request('resources/list', {}, timeoutMs) as { resources?: Array<{ name?: string; uri?: string; description?: string }> };
+      return (listed?.resources ?? [])
+        .filter((r) => typeof r?.uri === 'string' && r.uri.trim().length > 0)
+        .map((r) => ({
+          name: String(r.name || r.uri || '').trim(),
+          uri: String(r.uri || '').trim(),
+          description: typeof r.description === 'string' ? r.description : undefined,
+        }));
+    } catch (e) {
+      if (this.isMethodNotFoundError(e)) return [];
+      throw e;
+    }
+  }
+
+  private async fetchPrompts(timeoutMs: number): Promise<McpPrompt[]> {
+    try {
+      const listed = await this.request('prompts/list', {}, timeoutMs) as { prompts?: Array<{ name?: string; description?: string }> };
+      return (listed?.prompts ?? [])
+        .filter((p) => typeof p?.name === 'string' && p.name.trim().length > 0)
+        .map((p) => ({
+          name: String(p.name || '').trim(),
+          description: typeof p.description === 'string' ? p.description : undefined,
+        }));
+    } catch (e) {
+      if (this.isMethodNotFoundError(e)) return [];
+      throw e;
+    }
+  }
+
+  private isMethodNotFoundError(err: unknown): boolean {
+    const msg = String(err instanceof Error ? err.message : err).toLowerCase();
+    return msg.includes('method not found') || msg.includes('-32601');
   }
 
   private async connectSse(): Promise<void> {
@@ -136,6 +188,10 @@ export class McpClient {
       headers: { accept: 'text/event-stream', ...this.cfg.headers },
       signal: this.sseAbort.signal,
     });
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('text/html')) {
+      throw this.webPageUrlError(sseUrl);
+    }
     if (!res.ok || !res.body) throw new Error(`MCP SSE connect failed HTTP ${res.status}`);
 
     this.connected = true;
@@ -224,6 +280,21 @@ export class McpClient {
     } catch {
       return pathOrUrl;
     }
+  }
+
+  private looksLikeHtmlResponse(text: string, contentType: string): boolean {
+    const ct = String(contentType || '').toLowerCase();
+    if (ct.includes('text/html')) return true;
+    const trimmed = String(text || '').trim().toLowerCase();
+    return trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
+  }
+
+  private webPageUrlError(url: string): Error {
+    const lower = String(url || '').toLowerCase();
+    if (lower.includes('mcp-test-client')) {
+      return new Error('That URL is an MCP test client web page, not an MCP server endpoint. For mcpplaygroundonline, use a server endpoint such as /mcp-echo-server, /mcp-auth-server, /mcp-complex-schema-server, or /mcp-apps-server.');
+    }
+    return new Error('URL appears to be a web page, not an MCP endpoint. Use the MCP server endpoint URL (JSON-RPC or SSE).');
   }
 
   private framedPayload(rawJson: string): string {
@@ -356,6 +427,16 @@ export class McpClient {
     return [...this.tools];
   }
 
+  /** MCP resources discovered from the server. */
+  listResources(): McpResource[] {
+    return [...this.resources];
+  }
+
+  /** MCP prompts discovered from the server. */
+  listPrompts(): McpPrompt[] {
+    return [...this.prompts];
+  }
+
   serverName(): string { return this.cfg.name; }
   isBuiltin(): boolean { return !!this.cfg.builtin; }
   isConnected(): boolean { return this.connected; }
@@ -375,6 +456,8 @@ export class McpClient {
     this.proc?.kill();
     this.proc = null;
     this.tools = [];
+    this.resources = [];
+    this.prompts = [];
     this.recvBuffer = '';
     this.connected = false;
   }
@@ -407,16 +490,41 @@ export class McpClient {
     const id = this.nextId++;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...this.cfg.headers },
+      headers: { 'content-type': 'application/json', accept: MCP_ACCEPT_HEADER, ...this.cfg.headers },
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
     });
     const text = await res.text();
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (this.looksLikeHtmlResponse(text, contentType)) {
+      throw this.webPageUrlError(url);
+    }
     if (!res.ok) throw new Error(`MCP HTTP ${res.status}: ${text.slice(0, 200)}`);
-    let msg: RpcMessage;
-    try { msg = JSON.parse(text) as RpcMessage; }
-    catch { throw new Error('MCP HTTP response was not valid JSON-RPC'); }
+    const msg = this.parseRpcMessage(text, contentType);
+    if (!msg) throw new Error('MCP HTTP response was not valid JSON-RPC');
     if (msg.error) throw new Error(msg.error.message ?? 'MCP error');
     return msg.result;
+  }
+
+  private parseRpcMessage(text: string, contentType: string): RpcMessage | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+
+    if (contentType.includes('text/event-stream') || trimmed.startsWith('event:') || trimmed.startsWith('data:')) {
+      const chunks = trimmed.split(/\r?\n\r?\n/);
+      for (const chunk of chunks) {
+        const dataLines: string[] = [];
+        for (const line of chunk.split(/\r?\n/)) {
+          if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        }
+        if (!dataLines.length) continue;
+        const payload = dataLines.join('\n').trim();
+        if (!payload) continue;
+        try { return JSON.parse(payload) as RpcMessage; } catch { /* try next chunk */ }
+      }
+      return null;
+    }
+
+    try { return JSON.parse(trimmed) as RpcMessage; } catch { return null; }
   }
 
   private requestSse(method: string, params: object, timeoutMs: number): Promise<unknown> {
@@ -448,7 +556,7 @@ export class McpClient {
     const target = this.ssePostUrl ?? base;
     const res = await fetch(target, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...this.cfg.headers },
+      headers: { 'content-type': 'application/json', accept: MCP_ACCEPT_HEADER, ...this.cfg.headers },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -470,7 +578,7 @@ export class McpClient {
       if (!url) return Promise.resolve();
       return fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...this.cfg.headers },
+        headers: { 'content-type': 'application/json', accept: MCP_ACCEPT_HEADER, ...this.cfg.headers },
         body: JSON.stringify({ jsonrpc: '2.0', method, params }),
       }).then(() => undefined);
     }
